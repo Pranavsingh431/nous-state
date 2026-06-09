@@ -45,21 +45,19 @@ Every update is recorded as an immutable **Delta** — a change in understanding
 - **Contradictions** are resolved mathematically, not heuristically
 - **History** is queryable — *"What did the agent believe about Pranav in March?"*
 - **Forgetting** is principled — unused beliefs decay toward uncertainty via entropy
-- **Identity resolution** is automatic — two entity names with high mutual information are flagged as likely the same person
+- **Identity hints** — two entity names with high mutual information are flagged as *likely* the same person (a signal for your application to act on, not a guarantee)
 
 ---
 
 ## Install
 
 ```bash
-# From PyPI (coming soon)
 pip install nous-state
-
-# From GitHub (now)
-pip install git+https://github.com/Pranavsingh431/nous-state.git
 ```
 
 **Zero runtime dependencies.** Pure Python stdlib only (`math`, `sqlite3`, `json`, `urllib`).
+
+> ⚠️ **Honest caveat:** The engine's math is only as good as the extraction feeding it. The built-in rule-based extractor handles simple patterns. For messy real-world text, use the `LLMExtractor` — or bring your own parser. Garbage extraction → garbage beliefs, no matter how elegant the Bayesian update.
 
 ---
 
@@ -150,7 +148,7 @@ bits = memory.surprise("Pranav works at Google DeepMind.")
 | `history(entity, attribute)` | Full delta log for an attribute |
 | `explain(entity, attribute, value)` | Why does the agent believe X? |
 | `surprise(text)` | Information content in bits before observing |
-| `get_coupling(entity_a, entity_b)` | Identity similarity score (0–1) |
+| `get_coupling(entity_a, entity_b)` | Identity similarity hint (0–1) |
 | `get_entity_profile(entity)` | All attributes for an entity |
 | `apply_decay(current_time)` | Apply forgetting to stale dimensions |
 
@@ -185,22 +183,30 @@ PersistenceLayer (SQLite — survives restarts)
 ```
 
 **Key properties:**
-- `O(1)` reads — dictionary lookup, no vector search
+- `O(1)` per-attribute reads — dictionary lookup, not vector search (note: cross-entity queries like "find all entities using GPT-4" require a scan; a graph DB is better for that)
 - `O(k)` writes — multiply k floats, normalize (k = number of known values, typically < 10)
-- Append-only delta log — the most scalable write pattern in systems
+- Append-only delta log — the most scalable write pattern in distributed systems
 - Zero external dependencies
 
 ---
 
-## Why Not Vector DB / Knowledge Graph?
+## Where Nous Fits (and Where It Doesn't)
+
+Nous is not a replacement for vector databases or knowledge graphs. Each tool has a lane:
 
 | Problem | Vector DB | Knowledge Graph | **nous-state** |
 |---|---|---|---|
-| Contradictory facts | Stores both, LLM decides | Manual conflict rules | Bayesian update (automatic) |
-| Stale high-confidence facts | Still retrieved | Still in graph | Probability mass shifts |
-| "Why does agent believe X?" | Not possible | Requires audit log | Native (delta history) |
-| Identity resolution | Cosine similarity | Entity linking heuristics | Mutual information coupling |
-| Compute cost (read) | O(n) ANN search | O(edges) traversal | O(1) dict lookup |
+| Contradictory facts | Stores both, LLM decides | Manual conflict rules | **Bayesian update (automatic)** |
+| Stale high-confidence facts | Still retrieved | Still in graph | **Probability mass shifts** |
+| "Why does agent believe X?" | Not possible | Requires audit log | **Native (delta history)** |
+| Multi-hop relational queries | ❌ | **✅ Native** | ❌ |
+| Semantic document retrieval | **✅ Native** | ❌ | ❌ |
+| Identity resolution | Cosine similarity | Entity linking | Mutual information hints |
+| Per-attribute read cost | O(n) ANN search | O(edges) traversal | O(1) dict lookup |
+
+**Use Nous when** your agent needs to track evolving user state (preferences, tools, employer, beliefs) across sessions and resolve contradictions without hallucinating stale facts.
+
+**Don't use Nous when** you need relational traversal ("find all collaborators of Pranav's manager") or semantic search over documents. Use a graph DB or vector DB for those.
 
 ---
 
