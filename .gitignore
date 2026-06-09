@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+share/python-wheels/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# SQLite databases (generated at runtime)
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Misc project files (not part of the library)
+anamnesis/
+archive/
+*.pdf
+
+# Secrets — never commit API keys
+.env.local
+secrets.py

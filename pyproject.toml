@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nous-state"
+version = "0.1.0"
+description = "A probabilistic agent state layer. Bayesian belief tracking for long-running personal AI agents."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = ["agent", "memory", "bayesian", "llm", "state", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Zero runtime dependencies — pure Python stdlib only
+dependencies = []
+
+[project.optional-dependencies]
+# OpenRouter / any OpenAI-compatible API for LLM extraction
+llm = []  # stdlib urllib is used; no external package needed
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pranavsingh/nous-state"
+Repository = "https://github.com/pranavsingh/nous-state"
+"Bug Tracker" = "https://github.com/pranavsingh/nous-state/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nous*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
