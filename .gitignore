@@ -45,3 +45,24 @@ archive/
 # Secrets — never commit API keys
 .env.local
 secrets.py
+
+# benchmark outputs and large data
+benchmark/__pycache__/
+benchmark/results_*.jsonl
+benchmark/LongMemEval/
+benchmark/locomo/
+benchmark_output.log
+
+# local context and scratch files
+context.md
+data/
+
+# paper build artifacts
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz

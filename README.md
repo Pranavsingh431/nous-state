@@ -2,11 +2,34 @@
 
 **A probabilistic agent state layer for long-running personal AI agents.**
 
-> *"Knowledge is prediction, not storage."*
+> "Knowledge is prediction, not storage."
 
-[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)]()
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/nous-state)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![arXiv](https://img.shields.io/badge/arXiv-2606.22030-b31b1b.svg)](https://arxiv.org/abs/2606.22030)
+
+---
+
+## Paper
+
+This repository accompanies the preprint:
+
+**Nous: A Predictive World Model for Long-Term Agent Memory**
+Pranav Singh — Indian Institute of Technology Ropar
+[arXiv:2606.22030](https://arxiv.org/abs/2606.22030) · cs.AI · June 2026
+
+If you use this work, please cite:
+
+```bibtex
+@article{singh2026nous,
+  title   = {Nous: A Predictive World Model for Long-Term Agent Memory},
+  author  = {Singh, Pranav},
+  journal = {arXiv preprint arXiv:2606.22030},
+  year    = {2026}
+}
+```
+
+To reproduce the LoCoMo benchmark results reported in the paper, see [`benchmark/README.md`](benchmark/README.md).
 
 ---
 
@@ -20,7 +43,7 @@ User (Month 4): "I switched to GPT-4 and joined Google DeepMind."
 Agent (Month 5): *confidently tells someone Pranav uses Mistral at Sarvam AI*
 ```
 
-Vector databases store both facts. Knowledge graphs require manual conflict resolution. Both need an expensive LLM call to decide which fact wins. Neither gives you a mathematically principled answer.
+Vector databases store both facts. Knowledge graphs require manual conflict resolution. Neither gives you a mathematically principled answer to *which fact is currently true*.
 
 **nous-state** solves this with Bayesian probability distributions — the same math used in GPS navigation, spam filters, and medical diagnostics.
 
@@ -28,24 +51,25 @@ Vector databases store both facts. Knowledge graphs require manual conflict reso
 
 ## How It Works
 
-Instead of storing facts, Nous maintains **belief distributions** over entity attributes:
+Instead of storing facts, Nous maintains belief distributions over entity attributes:
 
-```
+```python
 Pranav.employer = { "Sarvam AI": 0.82, "unknown": 0.18 }
 ```
 
-When new evidence arrives, it performs a **Bayesian update**:
+When new evidence arrives, it performs a Bayesian update:
 
 ```
 "Pranav joined Google DeepMind" →
 Pranav.employer = { "Google DeepMind": 0.86, "Sarvam AI": 0.12, "unknown": 0.02 }
 ```
 
-Every update is recorded as an immutable **Delta** — a change in understanding, not just a fact. This means:
-- **Contradictions** are resolved mathematically, not heuristically
-- **History** is queryable — *"What did the agent believe about Pranav in March?"*
-- **Forgetting** is principled — unused beliefs decay toward uncertainty via entropy
-- **Identity hints** — two entity names with high mutual information are flagged as *likely* the same person (a signal for your application to act on, not a guarantee)
+Every update is recorded as an immutable **delta** — a change in understanding, not just a fact. This means:
+
+- **Contradictions are resolved mathematically**, not heuristically
+- **History is queryable** — "What did the agent believe about Pranav in March?"
+- **Forgetting is principled** — unused beliefs decay toward uncertainty via entropy decay
+- **Identity hints** — two entity names with high mutual information are flagged as likely the same person
 
 ---
 
@@ -55,9 +79,12 @@ Every update is recorded as an immutable **Delta** — a change in understanding
 pip install nous-state
 ```
 
-**Zero runtime dependencies.** Pure Python stdlib only (`math`, `sqlite3`, `json`, `urllib`).
+Zero runtime dependencies. Pure Python stdlib only (`math`, `sqlite3`, `json`, `urllib`).
 
-> ⚠️ **Honest caveat:** The engine's math is only as good as the extraction feeding it. The built-in rule-based extractor handles simple patterns. For messy real-world text, use the `LLMExtractor` — or bring your own parser. Garbage extraction → garbage beliefs, no matter how elegant the Bayesian update.
+> ⚠️ **Honest caveat:** The engine's math is only as good as the extraction feeding it.
+> The built-in rule-based extractor handles simple patterns. For messy real-world text,
+> use the `LLMExtractor` — or bring your own parser. Garbage extraction → garbage beliefs,
+> no matter how elegant the Bayesian update.
 
 ---
 
@@ -93,13 +120,12 @@ from nous import Nous
 from nous.llm_extractor import LLMExtractor
 
 extractor = LLMExtractor(
-    api_key="sk-or-...",           # Any OpenRouter key
+    api_key="sk-or-...",            # Any OpenRouter key
     user_context={"name": "Pranav"} # Resolves "I/me/my" → "Pranav"
 )
 
 memory = Nous("agent_memory.db", extractor=extractor)
 
-# Now feed raw conversation turns directly
 memory.observe("I switched from Mistral to GPT-4 because legal reasoning improved.")
 memory.observe("Actually wait, someone said Pranav is still at Sarvam AI?")
 memory.observe("No confirmed, he's definitely at Google DeepMind on Gemini.")
@@ -108,25 +134,22 @@ print(memory.predict("Pranav", "employer"))
 # → {"Google DeepMind": 0.97, "Sarvam AI": 0.03}
 ```
 
-### Explainability — why does the agent believe this?
+### Explainability
 
 ```python
 # Full auditable history
 for delta in memory.history("Pranav", "employer"):
     print(f"Surprise: {delta.surprise:.1f} bits | {delta.evidence[:60]}")
-
 # → Surprise: 4.3 bits | Actually, I left Sarvam AI and joined Google...
 # → Surprise: 0.2 bits | Pranav is definitely at Google DeepMind, I saw...
-# → Surprise: 0.1 bits | Yes confirmed, Pranav is at Google DeepMind...
 
 # Time-travel: what did the agent believe 30 days ago?
 past_belief = memory.query_at("Pranav", "employer", at_time=timestamp_30_days_ago)
 ```
 
-### Surprise scoring — filter noise before it enters memory
+### Surprise scoring
 
 ```python
-# How surprising is this claim, given what we already know?
 bits = memory.surprise("Pranav is still at Sarvam AI.")
 # → 5.1 bits  (high — contradicts current belief)
 
@@ -141,7 +164,7 @@ bits = memory.surprise("Pranav works at Google DeepMind.")
 ### `Nous(db_path, extractor=None)`
 
 | Method | Description |
-|---|---|
+|--------|-------------|
 | `observe(text, source, reliability)` | Ingest text, update beliefs |
 | `predict(entity, attribute)` | Get current probability distribution |
 | `query_at(entity, attribute, timestamp)` | Time-travel query |
@@ -157,7 +180,7 @@ bits = memory.surprise("Pranav works at Google DeepMind.")
 Works with any OpenAI-compatible API endpoint (OpenRouter, OpenAI, local via LM Studio).
 
 | Parameter | Default | Description |
-|---|---|---|
+|-----------|---------|-------------|
 | `api_key` | required | Your API key |
 | `model` | `google/gemini-2.5-flash` | Any model on OpenRouter |
 | `user_context` | `{}` | Dict with `name` key to resolve "I/me/my" |
@@ -183,30 +206,35 @@ PersistenceLayer (SQLite — survives restarts)
 ```
 
 **Key properties:**
-- `O(1)` per-attribute reads — dictionary lookup, not vector search (note: cross-entity queries like "find all entities using GPT-4" require a scan; a graph DB is better for that)
-- `O(k)` writes — multiply k floats, normalize (k = number of known values, typically < 10)
-- Append-only delta log — the most scalable write pattern in distributed systems
+- O(1) per-attribute reads — dictionary lookup, not vector search
+- O(k) writes — multiply k floats, normalise (k = number of known values, typically < 10)
+- Append-only delta log
 - Zero external dependencies
 
 ---
 
 ## Where Nous Fits (and Where It Doesn't)
 
-Nous is not a replacement for vector databases or knowledge graphs. Each tool has a lane:
-
-| Problem | Vector DB | Knowledge Graph | **nous-state** |
-|---|---|---|---|
-| Contradictory facts | Stores both, LLM decides | Manual conflict rules | **Bayesian update (automatic)** |
-| Stale high-confidence facts | Still retrieved | Still in graph | **Probability mass shifts** |
-| "Why does agent believe X?" | Not possible | Requires audit log | **Native (delta history)** |
-| Multi-hop relational queries | ❌ | **✅ Native** | ❌ |
-| Semantic document retrieval | **✅ Native** | ❌ | ❌ |
-| Identity resolution | Cosine similarity | Entity linking | Mutual information hints |
+| Problem | Vector DB | Knowledge Graph | nous-state |
+|---------|-----------|-----------------|------------|
+| Contradictory facts | Stores both, LLM decides | Manual conflict rules | Bayesian update (automatic) |
+| Stale high-confidence facts | Still retrieved | Still in graph | Probability mass shifts |
+| "Why does agent believe X?" | Not possible | Requires audit log | Native (delta history) |
+| Multi-hop relational queries | ❌ | ✅ Native | ❌ |
+| Semantic document retrieval | ✅ Native | ❌ | ❌ |
 | Per-attribute read cost | O(n) ANN search | O(edges) traversal | O(1) dict lookup |
 
-**Use Nous when** your agent needs to track evolving user state (preferences, tools, employer, beliefs) across sessions and resolve contradictions without hallucinating stale facts.
+---
 
-**Don't use Nous when** you need relational traversal ("find all collaborators of Pranav's manager") or semantic search over documents. Use a graph DB or vector DB for those.
+## Research Status
+
+This is research-stage code. The preprint ([arXiv:2606.22030](https://arxiv.org/abs/2606.22030)) describes this
+as a first public report — not a final or fully audited result. Ablations, a second benchmark
+(LongMemEval), and broader backbone evaluation are planned as immediate next steps and will be
+reported in a future revision.
+
+The `benchmark/` directory contains the evaluation code that produced the LoCoMo numbers in
+the paper. See [`benchmark/README.md`](benchmark/README.md) for reproduction instructions.
 
 ---
 
@@ -214,8 +242,6 @@ Nous is not a replacement for vector databases or knowledge graphs. Each tool ha
 
 MIT — see [LICENSE](LICENSE).
 
----
-
 ## Contributing
 
-Issues and PRs welcome. This is early-stage — if you hit a real-world edge case, opening an issue is genuinely valuable.
+Issues and PRs welcome. If you hit a real-world edge case, opening an issue is genuinely valuable.

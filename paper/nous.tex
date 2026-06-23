@@ -1,0 +1,603 @@
+\documentclass[11pt,a4paper,twocolumn]{article}
+
+\usepackage[top=1in,bottom=1in,left=0.75in,right=0.75in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage{caption}
+\usepackage{times}
+\usepackage{dblfloatfix}
+
+% ── Give equations room to breathe in narrow columns ─────────────────────────
+\setlength{\abovedisplayskip}{9pt}
+\setlength{\belowdisplayskip}{9pt}
+\setlength{\abovedisplayshortskip}{4pt}
+\setlength{\belowdisplayshortskip}{4pt}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=black}
+
+\title{\large\textbf{Nous: A Predictive World Model for Long-Term Agent Memory}}
+\author{
+  Pranav Singh \\
+  Indian Institute of Technology Ropar \\
+  \texttt{2023mcb1308@iitrpr.ac.in}
+}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+We present Nous, a novel agent memory architecture grounded in the principle
+that knowledge is prediction, not storage. Rather than persisting facts as
+database records, vector embeddings, or knowledge-graph triples, Nous
+maintains a predictive world model: a collection of categorical probability
+distributions, called dimensions, one per entity-attribute pair observed in
+conversation. Each incoming observation is scored by its information-theoretic
+surprise $\mathcal{S} = -\log_2 P(\text{obs} \mid \mathcal{D})$, and the
+distribution is updated via a closed-form Bayesian posterior. The primary
+stored artifact is the delta, a record of the shift from prior to posterior
+belief, rather than the fact itself. Forgetting emerges naturally as entropy
+decay toward the uniform distribution, and identity resolution is handled
+through mutual information between entity dimension sets. Evaluated on the
+LoCoMo long-term conversational memory benchmark~\citep{maharana2024locomo}
+across ten conversations (1,540 questions) using GPT-4o-mini as backbone,
+Nous achieves F1 of 63.50 (single-hop), 55.32 (multi-hop), 58.57 (temporal),
+and 62.50 (open-domain), outperforming A-MEM~\citep{xu2025amem} by $+24.1$,
+$+22.5$, $+27.3$, and $+45.4$ points respectively under identical conditions.
+Nous requires no external vector database or graph engine.
+\end{abstract}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+% ─────────────────────────────────────────────────────────────────────────────
+
+A persistent limitation of large language model (LLM) agents is the absence
+of a continuously evolving memory. The context window provides short-term
+recall within a session, but once a session ends all conversational history
+is lost unless externally persisted. This has motivated a growing body of
+work on agent memory systems, mechanisms that store, retrieve, and reason
+over information accumulated across many sessions.
+
+Existing approaches treat memory as a database of facts. Retrieval-augmented
+generation (RAG)~\citep{lewis2020rag} encodes conversation chunks as dense
+vectors and retrieves the $k$-nearest at query time. Knowledge-graph systems
+such as Zep~\citep{zep2024graphiti} store subject-predicate-object triples.
+Episodic systems such as MemGPT~\citep{packer2023memgpt} maintain explicit
+core memory strings and flush older records to an archival store. More recent
+systems including Mem0~\citep{raghavan2024mem0} and A-MEM~\citep{xu2025amem}
+combine graph and vector representations to improve retrieval precision.
+
+Despite their diversity, all these systems share one assumption: memory is a
+collection of things that happened. This produces three structural failure
+modes. First, conflict blindness: when a user changes jobs or preferences,
+contradictory records accumulate with no principled resolution mechanism.
+Second, heuristic forgetting: deletion rules are time-based rather than
+semantic. Third, retrieval granularity mismatch: a question asking what a
+person has painted over the years requires aggregating values from many
+sessions, but a fact store returns individual records with no accumulation
+mechanism.
+
+We argue these failures share a root cause: treating memory as storage rather
+than as a model of the world. The brain does not store a verbatim transcript
+of past conversations; it maintains a generative model of its environment and
+updates it when observations diverge from predictions
+\citep{rao1999predictive,friston2010fep}. Surprise drives learning. Unused
+beliefs decay toward uncertainty. Memory is a compressed, continuously refined
+probability distribution over the state of the world.
+
+Nous (from the Greek word for mind or intellect) implements this view as a
+practical agent memory system. The core data structure is a dimension, a
+categorical distribution over the possible values of a single entity-attribute
+pair. New observations are scored by information-theoretic surprise and
+integrated via Bayesian posterior update. The record of that update, a delta,
+is the primary stored artifact, capturing not what was observed but how it
+changed the agent's understanding. Forgetting is entropy decay, and conflict
+resolution is implicit: contradictory evidence naturally shifts probability
+mass away from the old value.
+
+Our contributions are: (1) the predictive world model paradigm for agent
+memory, formalised via dimensions, deltas, and surprise-driven Bayesian
+updates; (2) a complete open-source implementation requiring no external
+database; and (3) controlled experiments on LoCoMo demonstrating consistent
+improvement over academic baselines across all four reasoning categories.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Background and Related Work}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Long-term conversational memory.}
+The LoCoMo benchmark~\citep{maharana2024locomo} evaluates agent memory over
+conversations spanning up to 35 sessions, 300 to 600 turns, and 9,000 to
+16,000 tokens, covering single-hop, multi-hop, temporal, and open-domain
+questions. LongMemEval~\citep{wu2025longmemeval} (ICLR 2025) extends this
+with harder, audited questions and is increasingly adopted as a complementary
+standard.
+
+\paragraph{RAG-based memory.}
+RAG~\citep{lewis2020rag} retrieves the top-$k$ embedding-nearest chunks. Its
+primary failure is the inability to aggregate information distributed across
+many chunks, compounded by the lost-in-the-middle effect~\citep{liu2023lost}
+wherein relevant evidence buried in long contexts is ignored.
+
+\paragraph{MemGPT.}
+MemGPT~\citep{packer2023memgpt} partitions memory into in-context, recall,
+and archival tiers managed via function calls. It is effective for
+single-session recall but lacks conflict-resolution semantics. On LoCoMo with
+GPT-4o-mini it achieves F1 of 17.29 (single-hop) and 13.18
+(temporal)~\citep{xu2025amem}.
+
+\paragraph{A-MEM.}
+A-MEM~\citep{xu2025amem} enriches memories with Zettelkasten-style links,
+forming a graph of interconnected notes with LLM-generated attributes. It is
+the strongest peer-reviewed academic baseline on LoCoMo, reporting F1 of
+39.41, 32.86, 31.23, and 17.10 on single-hop, multi-hop, temporal, and
+open-domain with GPT-4o-mini.
+
+\paragraph{Zep and Mem0.}
+Zep~\citep{zep2024graphiti} builds a temporal knowledge graph; Mem0
+\citep{raghavan2024mem0} maintains a hybrid vector and graph store. Both
+report strong LoCoMo scores but use GPT-4o with a lenient LLM-as-judge.
+A community audit found this judge accepts semantically incorrect answers
+roughly 63 percent of the time under adversarial conditions, and approximately
+6.4 percent of LoCoMo ground truths contain errors~\citep{locomo2025audit}.
+We therefore compare Nous only against systems using the same token-F1 metric
+and GPT-4o-mini backbone.
+
+\paragraph{Predictive coding and the Bayesian brain.}
+Nous draws theoretically on predictive coding~\citep{rao1999predictive}, which
+models the brain as a generative model minimising prediction error, and on
+the Free Energy Principle~\citep{friston2010fep}, which unifies perception and
+learning under surprise minimisation. The Bayesian brain
+hypothesis~\citep{knill2004bayesian} grounds this computationally. Shannon's
+information measure~\citep{shannon1948} supplies the definition
+$\mathcal{S}(x) = -\log_2 P(x)$ bits, and Cover and Thomas~\citep{cover2006}
+supply the entropy and mutual information foundations.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The Nous Architecture}
+\label{sec:arch}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Core Abstractions}
+
+\begin{definition}[Dimension]
+A dimension $\mathcal{D}_{e,a}$ for entity $e$ and attribute $a$ is a pair
+$(V,\, p)$ where $V = \{v_1, \ldots, v_n\}$ is a finite vocabulary and
+$p : V \to [0,1]$ satisfies $\sum_{v} p(v) = 1$.
+\end{definition}
+
+\medskip
+
+A dimension encodes what the agent believes about one aspect of one entity.
+For instance, $\mathcal{D}_{\text{Pranav},\,\text{employer}}$ might be
+$\{(\text{Google},\, 0.08),\; (\text{Sarvam AI},\, 0.87),\;
+(\text{unknown},\, 0.05)\}$. The mode $\hat{v} = \arg\max_v p(v)$ is the
+current best belief.
+
+\begin{definition}[Delta]
+A delta $\Delta$ is a tuple
+$\langle e,\; a,\; p_{\mathrm{prior}},\; p_{\mathrm{post}},\;
+\mathcal{S},\; \tau,\; \omega \rangle$,
+where $p_{\mathrm{prior}}$ and $p_{\mathrm{post}}$ are the distributions
+before and after the update, $\mathcal{S}$ is surprise in bits, $\tau$ is
+the timestamp, and $\omega$ is the supporting evidence text.
+\end{definition}
+
+\medskip
+
+The delta is the primary stored artifact of Nous. It records not what happened
+but how the agent's understanding changed. The full delta sequence for a
+dimension is an auditable history of every belief revision.
+
+\subsection{Information-Theoretic Surprise}
+
+Given dimension $\mathcal{D}_{e,a} = (V, p)$ and observed value obs, the
+surprise is:
+
+\begin{equation}
+  \mathcal{S}(\text{obs} \mid \mathcal{D}_{e,a})
+    = -\log_2\, p(\text{obs})
+  \quad \text{bits.}
+  \label{eq:surprise}
+\end{equation}
+
+If obs $\notin V$, the vocabulary is extended with $p(\text{obs}) = \varepsilon$
+and masses renormalised, yielding near-maximum surprise for novel values. An
+observation confirming the current belief causes negligible change; one that
+contradicts it forces a large revision, mirroring the role of prediction error
+in biological memory consolidation~\citep{friston2010fep}.
+
+\subsection{Bayesian Update}
+
+Nous computes the posterior via Bayes' rule~\citep{bayes1763}. The likelihood
+is:
+
+\begin{equation}
+  \mathcal{L}(\text{obs} \mid v) =
+  \begin{cases}
+    1 - \varepsilon & v = \text{obs}, \\[4pt]
+    \dfrac{\varepsilon}{\,|V|-1\,} & \text{otherwise,}
+  \end{cases}
+  \label{eq:likelihood}
+\end{equation}
+
+and the posterior is:
+
+\begin{equation}
+  p_{\mathrm{post}}(v) =
+  \frac{\mathcal{L}(\text{obs} \mid v)\; p_{\mathrm{prior}}(v)}
+       {\displaystyle\sum_{v' \in V}
+        \mathcal{L}(\text{obs} \mid v')\; p_{\mathrm{prior}}(v')}.
+  \label{eq:bayes}
+\end{equation}
+
+This update is closed-form, runs in $O(|V|)$ time, and requires no gradient
+computation. Multiple contradictory observations shift probability mass
+naturally without explicit conflict detection.
+
+\begin{proposition}
+Under Eq.~\eqref{eq:likelihood}, the posterior mode converges to obs after a
+single observation whenever
+$p_{\mathrm{prior}}(\text{obs}) > \varepsilon / (1 - \varepsilon)$, which
+holds for all realistic vocabulary sizes with $\varepsilon = 0.01$.
+\end{proposition}
+
+\subsection{Entropy Decay}
+
+A dimension not updated for time $\Delta t$ grows more uncertain via
+exponential mixing toward the uniform distribution:
+
+\begin{equation}
+  p_t(v) = \lambda^{\Delta t}\; p_0(v)
+          + \bigl(1 - \lambda^{\Delta t}\bigr)\; \mathcal{U}(v),
+  \label{eq:decay}
+\end{equation}
+
+where $\mathcal{U}(v) = 1/|V|$ and $\lambda \in (0,1)$ is a per-dimension
+retention factor. As $\Delta t \to \infty$, $p_t \to \mathcal{U}$, encoding
+complete uncertainty. The entropy satisfies:
+
+\begin{equation}
+  H(p_t) \;=\; -\sum_{v} p_t(v) \log_2 p_t(v) \;\geq\; \lambda^{\Delta t}\, H(p_0),
+  \label{eq:entropy}
+\end{equation}
+
+guaranteeing the agent grows less certain as time passes without
+reinforcement, a property heuristic deletion rules cannot provide.
+
+\subsection{Identity Resolution}
+
+When two entity mentions may refer to the same person, Nous computes the
+symmetrised KL divergence between their shared dimensions:
+
+\begin{equation}
+  D(e_1, e_2) = \sum_{a \in \mathcal{A}_{e_1} \cap \mathcal{A}_{e_2}}
+  \!\mathrm{KL}(p_{e_1,a} \| p_{e_2,a})
+  + \mathrm{KL}(p_{e_2,a} \| p_{e_1,a}).
+  \label{eq:kl}
+\end{equation}
+
+Entities with low divergence across shared attributes are candidates for
+merging via a weighted mixture of their posteriors.
+
+\subsection{Observed-Values Aggregation}
+\label{sec:obsvals}
+
+Bayesian posteriors are unimodal: after many updates, mass concentrates on
+one value, discarding historical alternatives. For inherently multi-valued
+attributes such as activities or places visited, this is incorrect. Nous
+addresses this via delta-log aggregation: at query time, every value that
+appeared with surprise above threshold $\theta_{\min}$ is included in the
+context fact line:
+
+\begin{equation}
+  V^*_{e,a} = \bigl\{
+    \Delta.\text{obs} \;:\;
+    \Delta \in \mathcal{L}_{e,a},\;
+    \Delta.\mathcal{S} > \theta_{\min}
+  \bigr\}.
+  \label{eq:obsvals}
+\end{equation}
+
+This preserves the Bayesian world model for the current best belief while
+making the full historical record available for aggregation queries.
+
+\subsection{Pipelines}
+
+Figure~\ref{fig:arch} illustrates both pipelines. During ingestion, an LLM
+extractor parses each session into $(e,a,v)$ triples. For each triple, the
+current dimension is retrieved, the surprise computed via Eq.~\ref{eq:surprise},
+the posterior computed via Eq.~\ref{eq:bayes}, and a delta appended to the
+log. A compressor prunes dimensions whose entropy exceeds a ceiling threshold.
+
+During querying, named entities in the question seed a breadth-first search
+over the entity graph (up to two hops). For each retrieved entity, its
+dimensions are formatted as fact lines using Eq.~\ref{eq:obsvals}. The top-$k$
+delta records with the highest BM25 similarity to the question are appended as
+evidence lines, and the assembled context is passed to a category-specific
+prompt and then to the answering LLM.
+
+% ── Full-width figure (explicit coordinates to avoid overlap) ────────────────
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  font=\small\sffamily,
+  box/.style={
+    draw=black!50, rounded corners=3pt,
+    minimum width=1.9cm, minimum height=0.6cm,
+    align=center, fill=white, line width=0.55pt,
+    inner sep=4pt
+  },
+  wbox/.style={
+    draw=black!50, rounded corners=3pt,
+    minimum width=2.2cm, minimum height=0.6cm,
+    align=center, fill=gray!8, line width=0.55pt,
+    inner sep=4pt
+  },
+  arr/.style ={-{Stealth[length=4pt,width=3pt]},
+               line width=0.65pt, color=black!55},
+  darr/.style={-{Stealth[length=4pt,width=3pt]},
+               line width=0.65pt, color=black!40, dashed},
+  lbl/.style ={font=\footnotesize\bfseries\sffamily, color=black!50}
+]
+
+%% ── Ingestion row (y = 1.5) ──────────────────────────────────────────────
+\node[box] (A) at ( 0.0, 1.5) {Session};
+\node[box] (B) at ( 3.0, 1.5) {Extract \\ $(e,a,v)$};
+\node[box] (C) at ( 6.0, 1.5) {Surprise};
+\node[box] (D) at ( 9.0, 1.5) {Update};
+\node[box] (E) at (12.0, 1.5) {Delta Log};
+
+\draw[arr] (A)--(B);
+\draw[arr] (B)--(C);
+\draw[arr] (C)--(D);
+\draw[arr] (D)--(E);
+
+%% ── World model (centred, y = 0) ─────────────────────────────────────────
+\node[wbox] (W) at (6.5, 0.0) {World Model \\ (Dimensions)};
+
+%% arrows world model <-> ingestion
+\draw[arr]  (D.south)  -- ++(0,-0.4) -| (W.north east);
+\draw[darr] (W.north)  -- ++(0, 0.4) -| (C.south);
+
+%% ── Query row (y = -1.5) ─────────────────────────────────────────────────
+\node[box] (P) at ( 0.0,-1.5) {Question};
+\node[box] (Q) at ( 3.0,-1.5) {Entity BFS};
+\node[box] (R) at ( 6.0,-1.5) {Profile \\ Assembly};
+\node[box] (S) at ( 9.0,-1.5) {Router};
+\node[box] (T) at (12.0,-1.5) {LLM Answer};
+
+\draw[arr] (P)--(Q);
+\draw[arr] (Q)--(R);
+\draw[arr] (R)--(S);
+\draw[arr] (S)--(T);
+
+%% world model -> profile assembly
+\draw[arr] (W.south) -- ++(0,-0.4) -| (R.north);
+
+%% ── Row labels ───────────────────────────────────────────────────────────
+\node[lbl, left=0.3cm of A] {Ingestion};
+\node[lbl, left=0.3cm of P] {Query};
+
+\end{tikzpicture}
+\caption{Ingestion (top) and query (bottom) pipelines. The world model, a
+live store of dimensions, is updated by every Bayesian posterior (solid arrow
+from Update) and supplies the current dimension state during surprise
+computation (dashed arrow). At query time, the world model feeds the Profile
+Assembly step.}
+\label{fig:arch}
+\end{figure*}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experimental Setup}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Benchmark}
+We evaluate on LoCoMo~\citep{maharana2024locomo}: ten dyadic conversations
+spanning 19 to 32 sessions each, totalling 1,540 questions across single-hop
+(841), multi-hop (282), temporal (321), and open-domain (96). The adversarial
+category is excluded following the canonical protocol.
+
+\subsection{Metrics}
+We report token-level F1 and BLEU-1, both strict surface-form measures that
+do not reward semantically correct but differently-phrased answers. We
+additionally report context recall, the fraction of ground-truth answer tokens
+present anywhere in the assembled context, as a retrieval diagnostic, and a
+four-way failure bucket classification (good, answer miss, unknown, retrieval
+miss) assigned by a GPT-4o-mini judge.
+
+\subsection{Baselines}
+All Nous experiments use GPT-4o-mini for extraction, answer generation, and
+judging, matching the backbone in \citet{xu2025amem}. We compare against: (i)
+a no-memory baseline (direct QA, no retrieved context); (ii) MemGPT
+\citep{packer2023memgpt}; and (iii) A-MEM~\citep{xu2025amem}. Baseline scores
+are taken from~\citet{xu2025amem}. We do not compare numerically against Zep
+or Mem0 due to incompatible backbone and evaluation judge.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Results}
+\label{sec:results}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Table~\ref{tab:main} presents the main results. Nous achieves the highest F1
+on all four categories, outperforming A-MEM by between 8.7 and 45.4 points.
+
+\begin{table}[t]
+\centering
+\caption{Token F1 on LoCoMo (10 conversations, 1,540 questions). All systems
+use GPT-4o-mini. Baselines from \citet{xu2025amem}. Best per column in bold.}
+\label{tab:main}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcccc}
+\toprule
+System & SH & MH & T & OD \\
+\midrule
+No memory    & 40.36 & 25.02 & 18.41 & 12.04 \\
+MemGPT       & 17.29 & 30.36 & 13.18 & 12.24 \\
+A-MEM        & 39.41 & 32.86 & 31.23 & 17.10 \\
+\midrule
+\textbf{Nous}& \textbf{63.50} & \textbf{55.32} & \textbf{58.57} & \textbf{62.50} \\
+$\Delta$     & $+24.1$ & $+22.5$ & $+27.3$ & $+45.4$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SH = single-hop, MH = multi-hop, T = temporal, OD = open-domain.
+
+Table~\ref{tab:bleu} reports BLEU-1 and context recall.
+
+\begin{table}[t]
+\centering
+\caption{Extended results for Nous. Context recall measures retrieval quality
+independently of answer quality.}
+\label{tab:bleu}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcccc}
+\toprule
+Category & F1 & BLEU-1 & Ctx Rec & $n$ \\
+\midrule
+Single-hop  & 63.50 & 45.60 & 86.07 & 841 \\
+Multi-hop   & 55.32 & 23.90 & 75.35 & 282 \\
+Temporal    & 58.57 & 56.04 & 61.82 & 321 \\
+Open-domain & 62.50 & 10.06 & 47.50 &  96 \\
+\midrule
+Macro avg   & 59.97 & 33.90 & 67.69 & 1540 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The large BLEU-1/F1 gap on open-domain (10.06 vs 62.50) reflects that correct
+answers to personality and habit questions can be phrased in many ways, and
+BLEU-1 penalises valid paraphrases. On temporal questions BLEU-1 (56.04) and
+F1 (58.57) are nearly equal because temporal answers are precise dates or
+durations with minimal phrasing variation. The multi-hop gap (BLEU-1 23.90
+vs F1 55.32) arises because Nous generates exhaustive lists covering all
+ground-truth items plus additional values, raising recall while lowering
+unigram precision.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Analysis}
+\label{sec:analysis}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Failure Bucket Breakdown}
+
+Table~\ref{tab:buckets} shows the four-way failure distribution. Good denotes
+a correct answer; answer miss means context was present but the LLM answered
+incorrectly; unknown means the LLM declined to answer despite relevant context
+being present; retrieval miss means relevant information was absent from the
+assembled context.
+
+\begin{table}[h!]
+\centering
+\small
+\caption{Failure buckets for Nous across all categories.}
+\label{tab:buckets}
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrr}
+\toprule
+ & Good & Ans.miss & Unknown & Ret.miss \\
+\midrule
+SH  & 529 (63\%) & 129 (15\%) & 154 (18\%) & 29 (3\%) \\
+MH  &  89 (32\%) &  92 (33\%) &  18 (6\%)  & 24 (9\%) \\
+T   & 175 (55\%) &  65 (20\%) &  62 (19\%) & 19 (6\%) \\
+OD  &  40 (42\%) &  21 (22\%) &   0 (0\%)  & 35 (37\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For single-hop, the dominant failure is unknown answer (18\%) despite a
+context recall of 86.07\%. Of 154 such failures, 92 occur when context recall
+is at least 0.7, meaning the information is present but the model declines to
+commit. This is a backbone calibration issue rather than an architectural one.
+
+For multi-hop, good (32\%) and answer miss (33\%) are nearly equal at adequate
+context recall (75.35\%), indicating the model struggles to synthesise complete
+lists from distributed fact lines. Retrieval miss (9\%) contributes
+additionally, as some questions require linking entities beyond the two-hop
+search.
+
+Temporal suffers from both low context recall (61.82\%, the lowest of all
+categories) and high unknown answer (19\%). Temporal questions often depend on
+exact session dates embedded in evidence text rather than extracted as dimension
+values, a representational gap addressed in Section~\ref{sec:limitations}.
+
+Open-domain has the highest retrieval miss rate (37\%) and lowest context
+recall (47.50\%). Questions about personality and long-term habits do not map
+cleanly to entity-attribute dimensions, and improving retrieval is the primary
+path forward.
+
+\subsection{Context Recall as a Diagnostic}
+
+Context recall cleanly separates retrieval failures from answering failures.
+For single-hop, the 22.6-point gap between context recall (86.07\%) and F1
+(63.50\%) identifies the answering step as the binding constraint. For
+open-domain, context recall (47.50\%) is itself the ceiling, confirming that
+architectural retrieval improvements will directly translate to F1 gains.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Limitations and Future Work}
+\label{sec:limitations}
+% ─────────────────────────────────────────────────────────────────────────────
+
+We do not include controlled ablations isolating the contribution of individual
+components such as Bayesian update versus flat storage, entropy decay versus
+no forgetting, or delta aggregation versus current-state retrieval. Ablations
+are the primary planned extension; the bucket analysis provides directional
+evidence for each component's contribution.
+
+We evaluate exclusively on LoCoMo. LongMemEval~\citep{wu2025longmemeval}
+provides a harder, more carefully audited benchmark with fewer ground-truth
+errors, and evaluation on it is ongoing. Community audits have identified
+approximately 6.4 percent erroneous ground-truth answers in LoCoMo and
+LLM-judge calibration issues~\citep{locomo2025audit}; our strict token F1
+evaluation is therefore conservative.
+
+The categorical dimension is unimodal, requiring delta-log aggregation as a
+workaround for set-valued attributes. A set dimension maintaining an
+independent Bernoulli distribution per element is the highest-priority planned
+architectural extension. Making event timestamps explicit dimension attributes
+would additionally improve temporal context recall (currently 61.82\%). All
+results use GPT-4o-mini; confirming generalisation across backbone models such
+as Llama-3 and Mistral is necessary for a complete picture.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+We have presented Nous, an agent memory system that treats knowledge as a
+predictive world model rather than a database of facts. By representing each
+entity-attribute pair as a categorical probability distribution and updating
+it via information-theoretic surprise and closed-form Bayesian updates, Nous
+handles contradiction, forgetting, and multi-value aggregation in a unified
+framework with roots in cognitive science and information theory.
+
+On the LoCoMo benchmark under controlled GPT-4o-mini conditions, Nous
+outperforms A-MEM by 24.1, 22.5, 27.3, and 45.4 F1 points on single-hop,
+multi-hop, temporal, and open-domain questions respectively. The 86 percent
+single-hop context recall confirms that the Bayesian retrieval pipeline
+reliably surfaces relevant information; the primary remaining bottleneck is
+LLM answer extraction. The results suggest that probabilistic world models are
+a competitive and theoretically principled alternative to graph and vector
+memory systems. All code and the evaluation harness are released publicly.
+
+\clearpage
+\bibliography{nous}
+\bibliographystyle{plainnat}
+
+\end{document}

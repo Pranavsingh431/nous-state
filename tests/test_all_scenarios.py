@@ -94,8 +94,17 @@ def run_tests():
     inject(nous, "pranav431", "project", "NyayaSahayak")
 
     coupling = nous.get_coupling("Pranav Singh", "pranav431")
-    print(f"Coupling score between 'Pranav Singh' and 'pranav431': {coupling:.2f}")
-    assert coupling > 0.5, f"Expected coupling > 0.5, got {coupling}"
+    print(f"Coupling score with one shared attribute: {coupling:.2f}")
+    assert coupling == 0.0, f"Expected no coupling from one shared attribute, got {coupling}"
+
+    inject(nous, "Pranav Singh", "employer", "Google DeepMind")
+    inject(nous, "pranav431", "employer", "Google DeepMind")
+    inject(nous, "Pranav Singh", "role", "ML engineer")
+    inject(nous, "pranav431", "role", "ML engineer")
+
+    coupling = nous.get_coupling("Pranav Singh", "pranav431")
+    print(f"Coupling score with three shared attributes: {coupling:.2f}")
+    assert coupling > 0.5, f"Expected coupling > 0.5 with enough overlap, got {coupling}"
     print("Scenario 3 PASSED.\n")
 
     # ──────────────────────────────────────────────────────────────────────

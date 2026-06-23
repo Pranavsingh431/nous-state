@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use this software or the associated research, please cite as below."
+type: software
+title: "nous-state"
+abstract: >
+  A probabilistic agent state layer for long-running personal AI agents.
+  Implements Bayesian belief tracking, surprise-driven updates, and immutable
+  delta logs for AI agents that need to remember correctly over time.
+authors:
+  - family-names: Singh
+    given-names: Pranav
+    affiliation: "Indian Institute of Technology Ropar"
+    email: 2023mcb1308@iitrpr.ac.in
+    orcid: ""
+repository-code: "https://github.com/Pranavsingh431/nous-state"
+url: "https://arxiv.org/abs/2606.22030"
+license: MIT
+version: "0.1.0"
+date-released: "2026-06-09"
+keywords:
+  - agent-memory
+  - bayesian
+  - llm
+  - probabilistic
+  - information-theory
+  - ai-agents
+preferred-citation:
+  type: article
+  title: "Nous: A Predictive World Model for Long-Term Agent Memory"
+  authors:
+    - family-names: Singh
+      given-names: Pranav
+      affiliation: "Indian Institute of Technology Ropar"
+      email: 2023mcb1308@iitrpr.ac.in
+  journal: "arXiv preprint arXiv:2606.22030"
+  year: 2026
+  url: "https://arxiv.org/abs/2606.22030"
