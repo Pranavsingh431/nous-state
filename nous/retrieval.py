@@ -19,10 +19,13 @@ Design:
 import math
 import re
 import collections
+import logging
 import urllib.request
 import json
 import hashlib
 from typing import List, Dict, Tuple, Set, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +86,9 @@ class BM25Retriever:
         self.b = b
         self._docs: List[Dict] = []           # original event dicts
         self._tokenized: List[List[str]] = [] # stemmed tokens per doc
+        self._tf_maps: List[collections.Counter] = []  # term frequency per doc
         self._df: Dict[str, int] = {}         # document frequency per term
+        self._total_len: int = 0              # running token count across docs
         self._avgdl: float = 0.0
         self._idf: Dict[str, float] = {}      # precomputed IDF per term
 
@@ -91,25 +96,28 @@ class BM25Retriever:
         """Build index from a list of evidence event dicts (with 'text' field)."""
         self._docs = list(events)
         self._tokenized = []
+        self._tf_maps = []
         self._df = collections.Counter()
-        
+        self._total_len = 0
+
         for event in self._docs:
             text = event.get("text", "")
             # Also include speaker as a pseudo-term for entity matching
             speaker = event.get("speaker", "")
             tokens = _tokenize_stemmed(f"{speaker} {text}")
             self._tokenized.append(tokens)
+            self._tf_maps.append(collections.Counter(tokens))
+            self._total_len += len(tokens)
             for t in set(tokens):
                 self._df[t] += 1
-        
+
         N = len(self._docs)
         if N == 0:
             self._avgdl = 0.0
             return
-        
-        total_len = sum(len(toks) for toks in self._tokenized)
-        self._avgdl = total_len / N
-        
+
+        self._avgdl = self._total_len / N
+
         # Precompute IDF: log((N - df + 0.5) / (df + 0.5) + 1)
         self._idf = {}
         for term, df in self._df.items():
@@ -122,14 +130,15 @@ class BM25Retriever:
         speaker = event.get("speaker", "")
         tokens = _tokenize_stemmed(f"{speaker} {text}")
         self._tokenized.append(tokens)
-        
+        self._tf_maps.append(collections.Counter(tokens))
+        self._total_len += len(tokens)
+
         for t in set(tokens):
             self._df[t] = self._df.get(t, 0) + 1
-        
+
         N = len(self._docs)
-        total_len = sum(len(toks) for toks in self._tokenized)
-        self._avgdl = total_len / N
-        
+        self._avgdl = self._total_len / N
+
         # Recompute IDF for changed terms only
         for t in set(tokens):
             df = self._df[t]
@@ -166,8 +175,8 @@ class BM25Retriever:
             if dl == 0:
                 scores.append(0.0)
                 continue
-            
-            tf_map = collections.Counter(doc_tokens)
+
+            tf_map = self._tf_maps[i]
             score = 0.0
             
             for qt in query_tokens:
@@ -424,7 +433,7 @@ class DenseRetriever:
                         batch_embeddings[item["index"]] = item["embedding"]
                     embeddings.extend(batch_embeddings)
             except Exception as e:
-                print(f"Embedding API error: {e}")
+                logger.warning("Embedding API error: %s", e)
                 # Fallback on error by returning Nones
                 embeddings.extend([None] * len(batch))
                 

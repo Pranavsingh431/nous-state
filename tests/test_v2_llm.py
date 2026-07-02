@@ -189,5 +189,13 @@ def run_v2_test():
     print("  contradictions, maintained history, and persisted to disk.\n")
 
 
+def test_v2_llm_pipeline(tmp_path, monkeypatch):
+    import pytest
+    if not OPENROUTER_KEY:
+        pytest.skip("OPENROUTER_API_KEY not set — skipping live LLM integration test")
+    monkeypatch.chdir(tmp_path)  # keep test_v2_memory.db out of the repo
+    run_v2_test()
+
+
 if __name__ == "__main__":
     run_v2_test()

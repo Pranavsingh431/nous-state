@@ -550,7 +550,6 @@ def run_locomo_eval(data_path: str):
                     nous.observe(text, source="conversation", timestamp=ts)
                     turn_counter += 1
 
-            print(f"  Answering QA (total {len(item.get('qa', []))})...")
             # 1 = multi-hop, 2 = temporal, 3 = open-domain/commonsense,
             # 4 = single-hop, 5 = adversarial.
             cat_map = {1: "multi-hop", 2: "temporal", 3: "open-domain", 4: "single-hop", 5: "adversarial"}
@@ -588,15 +587,16 @@ def run_locomo_eval(data_path: str):
                 recall = context_recall_score(context_text, ground_truth)
                 bucket = failure_bucket(answer, f1, recall)
 
-                results[category].append({"f1": f1, "bleu1": bleu, "context_recall": recall})
-                failure_counts[category][bucket] = failure_counts[category].get(bucket, 0) + 1
+                results.setdefault(category, []).append({"f1": f1, "bleu1": bleu, "context_recall": recall})
+                cat_buckets = failure_counts.setdefault(category, {})
+                cat_buckets[bucket] = cat_buckets.get(bucket, 0) + 1
 
                 if output_fh:
                     output_fh.write(json.dumps({
-                    "conversation": conv_num,
-                    "sample_id": item.get("sample_id"),
-                    "raw_category": raw_category,
-                    "category": category,
+                        "conversation": conv_num,
+                        "sample_id": item.get("sample_id"),
+                        "raw_category": raw_category,
+                        "category": category,
                         "question": question,
                         "ground_truth": ground_truth,
                         "answer": answer,

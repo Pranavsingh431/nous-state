@@ -149,5 +149,10 @@ def run_tests():
     print("ALL SCENARIOS PASSED.")
 
 
+def test_architecture_scenarios(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # keep test_memory.db out of the repo
+    run_tests()
+
+
 if __name__ == "__main__":
     run_tests()
