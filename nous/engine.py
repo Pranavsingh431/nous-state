@@ -3,6 +3,7 @@ import time
 import re
 import uuid
 import collections
+import logging
 import os
 import hashlib
 
@@ -19,6 +20,8 @@ from .surprise import compute_surprise
 from .retrieval import HybridRetriever, DenseRetriever
 from .query_rewriter import QueryRewriter
 from .config import config
+
+logger = logging.getLogger(__name__)
 
 
 class Nous:
@@ -111,12 +114,13 @@ class Nous:
         api_key = os.environ.get("OPENROUTER_API_KEY")
         dense_retriever = DenseRetriever(api_key) if api_key else None
         if not api_key:
-            print("WARNING: OPENROUTER_API_KEY not found. Falling back to BM25-only retrieval.")
-            
+            logger.warning("OPENROUTER_API_KEY not found. Falling back to BM25-only retrieval.")
+
         self._retriever = HybridRetriever(dense_retriever=dense_retriever)
         self._retriever.build(self._evidence_events, self._relationship_edges)
-        
+
         self.query_rewriter = QueryRewriter(api_key=api_key) if api_key else None
+
     def _load_entity_registry(self):
         """Rebuild entity registry from existing dimensions."""
         for dim in self.world_model.all_dimensions():
@@ -1205,8 +1209,8 @@ class Nous:
                 coupling = self.get_coupling(new_entity, existing_entity)
                 if self.coupler.should_merge(coupling, new_entity, existing_entity):
                     # Log the discovery (in production, you might auto-merge or prompt)
-                    print(f"  ⚡ Auto-coupling detected: '{new_entity}' ≈ '{existing_entity}' "
-                          f"(score: {coupling:.2f})")
+                    logger.info("Auto-coupling detected: '%s' ≈ '%s' (score: %.2f)",
+                                new_entity, existing_entity, coupling)
             
     def embed_all_evidence(self):
         """Pre-warm the embedding cache for all stored evidence."""
@@ -1232,7 +1236,7 @@ class Nous:
                     
         # 2. Batch embed missing texts
         if texts_to_embed:
-            print(f"  Pre-warming embeddings for {len(texts_to_embed)} unique events...")
+            logger.info("Pre-warming embeddings for %d unique events...", len(texts_to_embed))
             batch_size = 32
             for i in range(0, len(texts_to_embed), batch_size):
                 batch = texts_to_embed[i:i + batch_size]
@@ -1243,7 +1247,7 @@ class Nous:
                 for h, emb in zip(hashes, embeddings):
                     if emb is not None:
                         self.persistence.store_embedding(h, emb)
-            print("  Pre-warming complete.")
+            logger.info("Pre-warming complete.")
             
         # 3. Attach embeddings to all events in memory
         for event in self._evidence_events:
