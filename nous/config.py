@@ -42,5 +42,17 @@ class NousConfig:
     # Novelty
     NOVELTY_PRIOR: float = float(os.getenv("NOUS_NOVELTY_PRIOR", "0.05"))
 
+    # --- Ablation toggles (all default OFF => byte-identical to production) ---
+    # Used only for controlled ablation runs; see benchmark/ABLATIONS.md.
+    # NOUS_ABLATE_UPDATE=flat  -> replace Bayesian posterior with naive last-write-wins
+    #                             overwrite (tests the belief-tracking mechanism itself).
+    # NOUS_ABLATE_AGG=1        -> disable observed-values delta aggregation (Eq. 7);
+    #                             return only the current best belief (tests multi-hop agg).
+    # NOUS_ABLATE_DENSE=1      -> disable dense retriever; BM25 + BFS only (tests how much
+    #                             the (undocumented) dense-embedding retrieval contributes).
+    ABLATE_UPDATE: str = os.getenv("NOUS_ABLATE_UPDATE", "").strip().lower()
+    ABLATE_AGG: bool = os.getenv("NOUS_ABLATE_AGG", "0") == "1"
+    ABLATE_DENSE: bool = os.getenv("NOUS_ABLATE_DENSE", "0") == "1"
+
 
 config = NousConfig()

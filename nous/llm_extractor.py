@@ -71,6 +71,64 @@ Output: [{{"entity": "Melanie", "attribute": "relationship_status", "value": "si
 
 CRITICAL: Return at most 10 claims. Output MUST be a complete, valid JSON array — never truncate."""
 
+    # --- Reliability-aware extraction (experimental) -----------------------------------------
+    # Motivation: the Bayesian belief updater weights each observation by a `reliability` scalar,
+    # but the base extractor emits no confidence, so observe() feeds a single fixed reliability to
+    # every claim. With constant reliability the posterior degenerates to a soft recency-follower
+    # (the contradiction micro-benchmark showed it then ties/loses to last-write-wins). This
+    # variant asks the LLM to estimate a per-claim reliability from EPISTEMIC MARKERS in the
+    # utterance — how confidently the speaker states the fact — WITHOUT any access to ground truth.
+    RELIABILITY_PROMPT_TEMPLATE = """You are a precise knowledge extraction engine.
+Given a conversation turn, extract factual claims as structured JSON tuples, and for EACH claim
+estimate how RELIABLE the statement is, judged only from how the speaker phrases it.
+
+Each claim: {{"entity": "...", "attribute": "...", "value": "...", "reliability": 0.0-1.0}}
+
+{context_block}
+
+COMMON ATTRIBUTE VOCABULARY (prefer these when they fit, but do not discard facts that need another concise snake_case attribute):
+People: employer, role, occupation, location, identity, relationship_status, feeling, hobby, interest, plan, goal, education, age
+Relationships: friend, partner, spouse, family, sibling, parent, child, colleague, mentor, pet, roommate, neighbor
+Activities/events: activity, event, achievement, research, travel, purchase, date, duration
+Projects/objects: model, framework, language, type, status, strength, topic, preference
+
+RELIABILITY RUBRIC — judge ONLY the speaker's epistemic stance (their phrasing), NOT whether you
+think the fact is true. Do not use world knowledge to second-guess the value; only the wording.
+  0.90-1.00  Explicit correction/confirmation or emphatic certainty:
+             "actually it's X", "to be clear, X", "definitely", "for sure", "confirmed", "I now X".
+  0.70-0.85  Plain first-hand assertion, no hedging: "I work at X", "my dog is named X".
+  0.45-0.65  Mild hedge: "I think X", "pretty sure it's X", "I believe X".
+  0.25-0.45  Strong hedge / guess: "maybe X", "might be X", "not totally sure but X", "probably X".
+  0.05-0.25  Rumor / secondhand / very unsure: "I heard it could be X", "someone said X, no idea".
+
+Rules:
+1. Entity = the subject. Use the EXACT proper name. Resolve "I"/"my"/"me" per the context above.
+2. Attribute = prefer the vocabulary above; else a short snake_case attribute.
+3. Value = the specific fact, short but complete. Proper capitalization.
+4. reliability = a number in [0,1] from the rubric, based purely on phrasing/epistemic markers.
+5. Skip greetings and filler. Only extract substantive facts. NEVER use pronouns as entities.
+
+Respond ONLY with a valid JSON array. No markdown, no explanation.
+
+Examples:
+
+Input: "Caroline: I definitely work at Google now — I started on Monday, it's official."
+Output: [{{"entity": "Caroline", "attribute": "employer", "value": "Google", "reliability": 0.95}}]
+
+Input: "Melanie: I think I might be moving to Boston? Not totally sure yet honestly."
+Output: [{{"entity": "Melanie", "attribute": "location", "value": "Boston", "reliability": 0.3}}]
+
+Input: "Caroline: Actually, forget what I said before — my role is Staff Engineer, confirmed today."
+Output: [{{"entity": "Caroline", "attribute": "role", "value": "Staff Engineer", "reliability": 0.95}}]
+
+Input: "Melanie: I heard Sarah maybe got a new job somewhere, could be wrong though."
+Output: [{{"entity": "Sarah", "attribute": "employer", "value": "new job", "reliability": 0.15}}]
+
+Input: "Caroline: My partner's name is Alex and we've been together three years."
+Output: [{{"entity": "Caroline", "attribute": "partner", "value": "Alex", "reliability": 0.8}}]
+
+CRITICAL: Return at most 10 claims. Output MUST be a complete, valid JSON array — never truncate."""
+
     QUESTION_PROMPT_TEMPLATE = """You are a precise knowledge extraction engine.
 Given a natural language question about a user, extract the entities and attributes being asked about.
 
@@ -124,6 +182,21 @@ Output: [{{"entity": "NyayaSahayak", "attribute": "framework"}}]
             context_block = 'When the speaker says "I", "my", or "me", use "user" as the entity.'
             
         return self.SYSTEM_PROMPT_TEMPLATE.format(
+            context_block=context_block,
+            user_name=self.user_name
+        )
+
+    def _build_reliability_prompt(self) -> str:
+        """System prompt for reliability-aware extraction (same context injection as _build_prompt)."""
+        if self.user_context:
+            context_lines = ["IMPORTANT CONTEXT about the current user:"]
+            for k, v in self.user_context.items():
+                context_lines.append(f"- {k}: {v}")
+            context_lines.append(f'When the speaker says "I", "my", or "me", the entity is "{self.user_name}".')
+            context_block = "\n".join(context_lines)
+        else:
+            context_block = 'When the speaker says "I", "my", or "me", use "user" as the entity.'
+        return self.RELIABILITY_PROMPT_TEMPLATE.format(
             context_block=context_block,
             user_name=self.user_name
         )
@@ -236,6 +309,94 @@ Output: [{{"entity": "NyayaSahayak", "attribute": "framework"}}]
             print(f"[LLMExtractor] Response structure error: {e}")
             print(f"[LLMExtractor] Full API response: {json.dumps(body)[:400]}")
             return []
+
+    def _chat(self, system_prompt: str, user_text: str, max_tokens: int = 4096) -> Optional[list]:
+        """Shared LLM call → parsed JSON list (or None). Mirrors extract()'s retry/error handling.
+        Kept separate from extract() so the battle-tested eval path is untouched."""
+        import time
+        payload = json.dumps({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            "temperature": 0.0,
+            "max_tokens": max_tokens,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.base_url}/chat/completions", data=payload,
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {self.api_key}"},
+            method="POST",
+        )
+        body = None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=45) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode("utf-8") if e.fp else ""
+                if e.code == 429:
+                    time.sleep(15 * (attempt + 1)); continue
+                print(f"[LLMExtractor] HTTP {e.code}: {error_body[:200]}")
+                return None
+            except Exception as e:
+                if attempt < 3:
+                    time.sleep(5); continue
+                print(f"[LLMExtractor] Request failed: {e}")
+                return None
+            if "error" in body:
+                err_code = body["error"].get("code")
+                if err_code in (429, 504, "429", "504"):
+                    time.sleep(15 * (attempt + 1)); body = None; continue
+                print(f"[LLMExtractor] API error {err_code}: {body['error'].get('message', '')}")
+                return None
+            break
+        if body is None:
+            return None
+        try:
+            content = body["choices"][0]["message"]["content"].strip()
+            if content.startswith("```"):
+                lines = content.split("\n")
+                content = "\n".join(lines[1:])
+                if content.rstrip().endswith("```"):
+                    content = content.rstrip()[:-3]
+                content = content.strip()
+            return self._parse_json_robust(content)
+        except (KeyError, IndexError) as e:
+            print(f"[LLMExtractor] Response structure error: {e}")
+            return None
+
+    def extract_with_reliability(self, text: str, default_reliability: float = 0.7
+                                 ) -> List[Tuple[str, str, str, float]]:
+        """Reliability-aware extraction. Returns (entity, attribute, value, reliability) 4-tuples.
+
+        `reliability` is estimated by the LLM from epistemic markers in the utterance (hedging,
+        certainty, self-correction) — never from ground truth. Claims missing/invalid reliability
+        fall back to `default_reliability`. Same normalization/alias resolution as extract()."""
+        claims_raw = self._chat(self._build_reliability_prompt(), text)
+        if not claims_raw:
+            return []
+        claims: List[Tuple[str, str, str, float]] = []
+        for c in claims_raw:
+            if not isinstance(c, dict):
+                continue
+            entity = str(c.get("entity") or "").strip()
+            attribute = str(c.get("attribute") or "").strip()
+            value = c.get("value")
+            value = "" if value is None else str(value).strip()
+            if not (entity and attribute and value):
+                continue
+            try:
+                rel = float(c.get("reliability", default_reliability))
+            except (TypeError, ValueError):
+                rel = default_reliability
+            rel = min(1.0, max(0.0, rel))
+            entity = self._resolve_alias(self._normalize_entity(entity))
+            attribute = self._normalize_attribute(attribute)
+            value = self._normalize_value(value)
+            claims.append((entity, attribute, value, rel))
+        return claims
 
     def _parse_json_robust(self, content: str):
         """

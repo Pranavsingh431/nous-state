@@ -10,10 +10,10 @@
 \usepackage{microtype}
 \usepackage{enumitem}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta}
+\usetikzlibrary{arrows.meta,positioning}
 \usepackage{caption}
-\usepackage{times}
-\usepackage{dblfloatfix}
+% \usepackage{times}  % dropped: psnfss Courier/Times metrics absent on this TeX install; default CM fonts always compile
+% \usepackage{dblfloatfix}  % only needed for bottom [b] double-column floats; fig* uses [t]
 
 % ── Give equations room to breathe in narrow columns ─────────────────────────
 \setlength{\abovedisplayskip}{9pt}
@@ -39,24 +39,38 @@
 \thispagestyle{empty}
 
 \begin{abstract}
-We present Nous, a novel agent memory architecture grounded in the principle
-that knowledge is prediction, not storage. Rather than persisting facts as
-database records, vector embeddings, or knowledge-graph triples, Nous
-maintains a predictive world model: a collection of categorical probability
-distributions, called dimensions, one per entity-attribute pair observed in
-conversation. Each incoming observation is scored by its information-theoretic
-surprise $\mathcal{S} = -\log_2 P(\text{obs} \mid \mathcal{D})$, and the
-distribution is updated via a closed-form Bayesian posterior. The primary
-stored artifact is the delta, a record of the shift from prior to posterior
-belief, rather than the fact itself. Forgetting emerges naturally as entropy
-decay toward the uniform distribution, and identity resolution is handled
-through mutual information between entity dimension sets. Evaluated on the
-LoCoMo long-term conversational memory benchmark~\citep{maharana2024locomo}
-across ten conversations (1,540 questions) using GPT-4o-mini as backbone,
-Nous achieves F1 of 63.50 (single-hop), 55.32 (multi-hop), 58.57 (temporal),
-and 62.50 (open-domain), outperforming A-MEM~\citep{xu2025amem} by $+24.1$,
-$+22.5$, $+27.3$, and $+45.4$ points respectively under identical conditions.
-Nous requires no external vector database or graph engine.
+We present Nous, an agent memory architecture grounded in the principle that
+knowledge is prediction, not storage. Rather than persisting facts as database
+records, vector embeddings, or knowledge-graph triples, Nous maintains a
+predictive world model: a collection of categorical probability distributions,
+called dimensions, one per entity-attribute pair observed in conversation. Each
+incoming observation is scored by its information-theoretic surprise
+$\mathcal{S} = -\log_2 P(\text{obs} \mid \mathcal{D})$, and the distribution is
+updated via a closed-form Bayesian posterior. The primary stored artifact is
+the delta, a record of the shift from prior to posterior belief, rather than
+the fact itself. Forgetting emerges as entropy decay toward the uniform
+distribution, and identity resolution uses mutual information between entity
+dimension sets. On the LoCoMo long-term conversational memory
+benchmark~\citep{maharana2024locomo} (ten conversations, 1,540 questions),
+under a strict token-F1 metric Nous is competitive with the strongest academic
+baseline A-MEM~\citep{xu2025amem}, exceeding it on temporal (51.1 vs 12.1) and
+single-hop (44.7 vs 27.0) questions while trailing on multi-hop (23.5 vs 45.9)
+and open-domain (10.5 vs 44.7)---an even two--two split, not a leaderboard sweep.
+Our central findings, however, are analytical rather than a leaderboard result.
+First, a controlled ablation shows that on LoCoMo the Bayesian belief update is
+\emph{inert}: replacing it with naive last-write-wins does not reduce accuracy,
+because standard conversational QA rarely stresses contradictory, low-reliability
+evidence. Second, we identify why---the belief update only pays off when
+observations carry per-source \emph{reliability}, which a standard extraction
+pipeline does not supply---and add a reliability-extraction component that
+estimates it from epistemic markers in language. On a controlled
+contradiction/staleness benchmark this recovers a large advantage for
+belief-updating over last-write-wins (100 vs 67 macro accuracy) and over a
+strong LLM-over-raw-memory baseline (100 vs 90), concentrated exactly in
+noise resistance. Third, we document a 27.5-point macro gap between strict
+token-F1 and a generous LLM-as-judge on the same LoCoMo outputs, quantifying the
+metric fragility that complicates memory-system comparison. Nous requires no external
+vector database or graph engine; all code and the evaluation harness are public.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -110,8 +124,18 @@ mass away from the old value.
 Our contributions are: (1) the predictive world model paradigm for agent
 memory, formalised via dimensions, deltas, and surprise-driven Bayesian
 updates; (2) a complete open-source implementation requiring no external
-database; and (3) controlled experiments on LoCoMo demonstrating consistent
-improvement over academic baselines across all four reasoning categories.
+database; (3) an honest evaluation on LoCoMo under a strict token-F1 metric,
+including a controlled ablation showing that the Bayesian belief update is
+\emph{inert} on this benchmark---naive last-write-wins matches it---because
+standard conversational QA rarely presents contradictory, low-reliability
+evidence; (4) a mechanistic account of \emph{when} belief-updating memory
+helps, and a reliability-extraction component that supplies the missing
+per-observation reliability signal, validated end-to-end on a
+contradiction/staleness benchmark where it beats both last-write-wins and a
+strong LLM-over-memory baseline; and (5) a quantification of LoCoMo metric
+fragility---a 27-point macro gap between strict token-F1 and a generous
+LLM-as-judge on identical outputs (59.97 vs 32.45)---which we argue should
+temper leaderboard comparisons of memory systems.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Background and Related Work}
@@ -135,15 +159,15 @@ wherein relevant evidence buried in long contexts is ignored.
 MemGPT~\citep{packer2023memgpt} partitions memory into in-context, recall,
 and archival tiers managed via function calls. It is effective for
 single-session recall but lacks conflict-resolution semantics. On LoCoMo with
-GPT-4o-mini it achieves F1 of 17.29 (single-hop) and 13.18
+GPT-4o-mini it achieves token-F1 of 26.65 (single-hop) and 9.15
 (temporal)~\citep{xu2025amem}.
 
 \paragraph{A-MEM.}
 A-MEM~\citep{xu2025amem} enriches memories with Zettelkasten-style links,
 forming a graph of interconnected notes with LLM-generated attributes. It is
-the strongest peer-reviewed academic baseline on LoCoMo, reporting F1 of
-39.41, 32.86, 31.23, and 17.10 on single-hop, multi-hop, temporal, and
-open-domain with GPT-4o-mini.
+the strongest peer-reviewed academic baseline on LoCoMo, reporting token-F1 of
+27.02, 45.85, 12.14, and 44.65 on single-hop, multi-hop, temporal, and
+open-domain with GPT-4o-mini~\citep{xu2025amem}.
 
 \paragraph{Zep and Mem0.}
 Zep~\citep{zep2024graphiti} builds a temporal knowledge graph; Mem0
@@ -152,8 +176,10 @@ report strong LoCoMo scores but use GPT-4o with a lenient LLM-as-judge.
 A community audit found this judge accepts semantically incorrect answers
 roughly 63 percent of the time under adversarial conditions, and approximately
 6.4 percent of LoCoMo ground truths contain errors~\citep{locomo2025audit}.
-We therefore compare Nous only against systems using the same token-F1 metric
-and GPT-4o-mini backbone.
+We therefore restrict our numerical comparison to A-MEM and MemGPT, which report
+strict token-F1, and---because this judge fragility is central---we report both
+strict token-F1 and an LLM-judge score for Nous and quantify their gap
+(Section~\ref{sec:results}) rather than reporting the judge alone.
 
 \paragraph{Predictive coding and the Bayesian brain.}
 Nous draws theoretically on predictive coding~\citep{rao1999predictive}, which
@@ -164,6 +190,28 @@ hypothesis~\citep{knill2004bayesian} grounds this computationally. Shannon's
 information measure~\citep{shannon1948} supplies the definition
 $\mathcal{S}(x) = -\log_2 P(x)$ bits, and Cover and Thomas~\citep{cover2006}
 supply the entropy and mutual information foundations.
+
+\paragraph{Memory poisoning and trust-based defenses.}
+A persistent-state attack surface unique to agents is \emph{memory poisoning}:
+an attacker writes malicious content into long-term memory so the agent acts on
+it in later sessions. AgentPoison~\citep{chen2024agentpoison} optimises a
+backdoor trigger in a RAG/memory store, and MINJA~\citep{dong2025minja} injects
+malicious records through query-only interaction; both report high
+attack-success rates and establish the threat category, which OWASP now lists
+as ASI06~\citep{owasp2026agentic}. We cite these to motivate the threat, not as
+a numerical baseline: their attack shapes (optimised trigger backdoor,
+reasoning-bridge injection) differ from the fact-overwrite setting we study, so
+success rates are not directly comparable. On defense, the closest prior work
+assigns \emph{content-derived} trust: \citet{mempoison2026} score trust from
+composite content and pattern signals with trust-aware retrieval and temporal
+decay. We show (Section~\ref{sec:security}) that content-inferred trust is
+adversarially gameable---a confident-sounding injection earns high trust---and
+that \emph{provenance}-derived trust, composed as
+$\min(\text{provenance},\text{content})$ and propagated through trusted
+intermediaries via taint tracking, is what actually resists poisoning. OWASP
+already recommends provenance tracking as a mitigation~\citep{owasp2026agentic};
+our contribution is not the concept but a concrete mechanism for it and an
+empirical map of when it holds, where it fails, and what it costs.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{The Nous Architecture}
@@ -411,33 +459,56 @@ spanning 19 to 32 sessions each, totalling 1,540 questions across single-hop
 category is excluded following the canonical protocol.
 
 \subsection{Metrics}
-We report token-level F1 and BLEU-1, both strict surface-form measures that
-do not reward semantically correct but differently-phrased answers. We
-additionally report context recall, the fraction of ground-truth answer tokens
-present anywhere in the assembled context, as a retrieval diagnostic, and a
-four-way failure bucket classification (good, answer miss, unknown, retrieval
-miss) assigned by a GPT-4o-mini judge.
+We report two answer-quality metrics on the same generated outputs and are
+explicit about their difference, because it is large and consequential.
+\emph{Strict token-F1} is the unigram overlap between predicted and
+ground-truth answer after normalisation; it does not reward semantically
+correct but differently-phrased answers, and it is the metric under which the
+academic baselines we compare against report. \emph{LLM-judge accuracy} is the
+fraction of answers a GPT-4o-mini judge, instructed to accept an answer whose
+key facts match regardless of wording, marks correct. We treat token-F1 as the
+primary metric for cross-system comparison and report the judge score
+alongside it; as Section~\ref{sec:results} shows, the two diverge by 27 macro
+points, and the judge score is not comparable to baselines that use token-F1.
+We additionally report BLEU-1; context recall, the fraction of ground-truth
+answer tokens present anywhere in the assembled context, as a retrieval
+diagnostic; and a four-way failure bucket classification (good, answer miss,
+unknown, retrieval miss) assigned by the same judge.
 
 \subsection{Baselines}
-All Nous experiments use GPT-4o-mini for extraction, answer generation, and
-judging, matching the backbone in \citet{xu2025amem}. We compare against: (i)
-a no-memory baseline (direct QA, no retrieved context); (ii) MemGPT
-\citep{packer2023memgpt}; and (iii) A-MEM~\citep{xu2025amem}. Baseline scores
-are taken from~\citet{xu2025amem}. We do not compare numerically against Zep
-or Mem0 due to incompatible backbone and evaluation judge.
+Nous uses \texttt{gemini-2.5-flash} for triple extraction and answer
+generation, and \texttt{gpt-4o-mini} as the judge. We compare against: (i) a
+no-memory baseline (direct QA, no retrieved context); (ii)
+MemGPT~\citep{packer2023memgpt}; and (iii) A-MEM~\citep{xu2025amem}, the
+strongest peer-reviewed academic baseline. Baseline token-F1 scores are taken
+from~\citet{xu2025amem} (GPT-4o-mini backbone). Because the backbone and
+retrieval stacks differ, we treat this as an indicative rather than a fully
+controlled comparison; a matched re-run of each baseline is left to future
+work. We do not compare numerically against Zep or Mem0, which report under
+GPT-4o with a lenient LLM-judge~\citep{locomo2025audit}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Results}
 \label{sec:results}
 % ─────────────────────────────────────────────────────────────────────────────
 
-Table~\ref{tab:main} presents the main results. Nous achieves the highest F1
-on all four categories, outperforming A-MEM by between 8.7 and 45.4 points.
+\paragraph{Main comparison (strict token-F1).}
+Table~\ref{tab:main} reports strict token-F1, the metric under which the
+academic baselines report. Under this metric Nous is competitive with, not
+dominant over, A-MEM, splitting the four categories two--two: Nous is best on
+temporal (51.10 vs 12.14, a 39-point margin) and single-hop (44.66 vs 27.02),
+while A-MEM is best on multi-hop (45.85 vs 23.48) and open-domain (44.65 vs
+10.54). Temporal, where categorical belief tracking most directly captures a
+changing state, is Nous's clearest strength; the multi-hop and open-domain
+deficits trace to list-aggregation and retrieval limits we analyse in
+Section~\ref{sec:analysis}.
 
 \begin{table}[t]
 \centering
-\caption{Token F1 on LoCoMo (10 conversations, 1,540 questions). All systems
-use GPT-4o-mini. Baselines from \citet{xu2025amem}. Best per column in bold.}
+\caption{Strict token-F1 on LoCoMo (10 conversations, 1,540 questions).
+Baselines from \citet{xu2025amem} (GPT-4o-mini). Nous uses gemini-2.5-flash
+for extraction/answering. Best per column in bold. The comparison is
+indicative: backbones and retrieval stacks differ (see text).}
 \label{tab:main}
 \renewcommand{\arraystretch}{1.25}
 \setlength{\tabcolsep}{4pt}
@@ -445,49 +516,52 @@ use GPT-4o-mini. Baselines from \citet{xu2025amem}. Best per column in bold.}
 \toprule
 System & SH & MH & T & OD \\
 \midrule
-No memory    & 40.36 & 25.02 & 18.41 & 12.04 \\
-MemGPT       & 17.29 & 30.36 & 13.18 & 12.24 \\
-A-MEM        & 39.41 & 32.86 & 31.23 & 17.10 \\
+LoCoMo       & 25.02 & 18.41 & 12.04 & 40.36 \\
+MemGPT       & 26.65 & 25.52 & 9.15  & 41.04 \\
+A-MEM        & 27.02 & \textbf{45.85} & 12.14 & \textbf{44.65} \\
 \midrule
-\textbf{Nous}& \textbf{63.50} & \textbf{55.32} & \textbf{58.57} & \textbf{62.50} \\
-$\Delta$     & $+24.1$ & $+22.5$ & $+27.3$ & $+45.4$ \\
+\textbf{Nous}& \textbf{44.66} & 23.48 & \textbf{51.10} & 10.54 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 SH = single-hop, MH = multi-hop, T = temporal, OD = open-domain.
 
-Table~\ref{tab:bleu} reports BLEU-1 and context recall.
+\paragraph{Metric sensitivity (the headline caveat).}
+An earlier version of this work reported the LLM-judge column of
+Table~\ref{tab:metric} as ``F1.'' It is not: it is a generous LLM-as-judge that
+accepts semantically correct paraphrases. On identical outputs the judge scores
+59.97 macro while strict token-F1 scores 32.45---a 27.5-point gap. Three of the
+four judge scores exceed the mathematical maximum token-F1 attainable given the
+measured BLEU-1, confirming the two cannot be the same quantity. The gap is
+largest exactly where answers admit many surface forms: open-domain
+(judge 62.50 vs token-F1 10.54; context recall only 47.5\%, so the judge credits
+answers the retriever never supported). This is not a Nous-specific artifact but
+a property of LoCoMo evaluation~\citep{locomo2025audit}; we report it as a
+result in its own right, and urge that memory-system comparisons fix the judge
+before comparing scores.
 
 \begin{table}[t]
 \centering
-\caption{Extended results for Nous. Context recall measures retrieval quality
-independently of answer quality.}
-\label{tab:bleu}
+\caption{Nous under three answer-quality lenses on the same outputs, plus
+context recall. The judge/token-F1 gap (27.5 macro) is the metric-sensitivity
+finding; it is \emph{not} a quality improvement.}
+\label{tab:metric}
 \renewcommand{\arraystretch}{1.25}
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{lcccc}
 \toprule
-Category & F1 & BLEU-1 & Ctx Rec & $n$ \\
+Category & Token-F1 & BLEU-1 & LLM-judge & Ctx Rec \\
 \midrule
-Single-hop  & 63.50 & 45.60 & 86.07 & 841 \\
-Multi-hop   & 55.32 & 23.90 & 75.35 & 282 \\
-Temporal    & 58.57 & 56.04 & 61.82 & 321 \\
-Open-domain & 62.50 & 10.06 & 47.50 &  96 \\
+Single-hop  & 44.66 & 45.60 & 63.50 & 86.07 \\
+Multi-hop   & 23.48 & 23.90 & 55.32 & 75.35 \\
+Temporal    & 51.10 & 56.04 & 58.57 & 61.82 \\
+Open-domain & 10.54 & 10.06 & 62.50 & 47.50 \\
 \midrule
-Macro avg   & 59.97 & 33.90 & 67.69 & 1540 \\
+Macro avg   & 32.45 & 33.90 & 59.97 & 67.69 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-The large BLEU-1/F1 gap on open-domain (10.06 vs 62.50) reflects that correct
-answers to personality and habit questions can be phrased in many ways, and
-BLEU-1 penalises valid paraphrases. On temporal questions BLEU-1 (56.04) and
-F1 (58.57) are nearly equal because temporal answers are precise dates or
-durations with minimal phrasing variation. The multi-hop gap (BLEU-1 23.90
-vs F1 55.32) arises because Nous generates exhaustive lists covering all
-ground-truth items plus additional values, raising recall while lowering
-unigram precision.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Analysis}
@@ -545,56 +619,336 @@ path forward.
 \subsection{Context Recall as a Diagnostic}
 
 Context recall cleanly separates retrieval failures from answering failures.
-For single-hop, the 22.6-point gap between context recall (86.07\%) and F1
-(63.50\%) identifies the answering step as the binding constraint. For
-open-domain, context recall (47.50\%) is itself the ceiling, confirming that
-architectural retrieval improvements will directly translate to F1 gains.
+For single-hop, context recall is high (86.07\%) while strict token-F1 is 44.66,
+identifying the answering/normalisation step---not retrieval---as the binding
+constraint. For open-domain, context recall (47.50\%) is itself the ceiling:
+the retriever supports fewer than half the answers, which is why the generous
+judge score there (62.50) is untrustworthy and the token-F1 (10.54) so low.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Ablations: What Actually Drives the Results}
+\label{sec:ablations}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The architecture's central claim is that surprise-driven Bayesian belief
+tracking is what makes the memory work. We test this directly with controlled
+ablations on a three-conversation subset (385 questions), using BM25 with
+two-hop entity BFS as the retriever and scoring on both metrics. We toggle one
+component at a time: the Bayesian update (replaced by naive last-write-wins,
+which collapses all mass onto the newest value), and observed-values
+aggregation (which lists all values ever seen for an attribute).
+
+\begin{table}[t]
+\centering
+\caption{Component ablations on the 3-conversation subset (385 questions),
+BM25+BFS retrieval. Disabling the Bayesian update (\textsc{flat}) does not hurt;
+disabling aggregation (\textsc{no-agg}) does. Macro over the four categories.}
+\label{tab:ablation}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lcc}
+\toprule
+Variant & LLM-judge & Token-F1 \\
+\midrule
+Full engine                       & 69.62 & 36.77 \\
+$-$ Bayesian update (\textsc{flat}) & \textbf{72.46} & 36.27 \\
+$-$ Aggregation (\textsc{no-agg})   & 66.58 & 35.39 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The result is decisive and, for our thesis, uncomfortable
+(Table~\ref{tab:ablation}). \textbf{Replacing the Bayesian update with naive
+last-write-wins does not reduce accuracy}---it is marginally better on the judge
+(72.46 vs 69.62) and a wash on token-F1 (36.27 vs 36.77). On LoCoMo, the
+Bayesian belief update is effectively \emph{inert}. The component that does
+matter is the mundane one: disabling observed-values aggregation costs the most
+(judge 66.58), the drop concentrated in multi-hop (judge 55.41 $\rightarrow$
+50.00), because list-valued questions need every value ever seen, not a single
+most-probable one. We also find the dense retriever inert on this data
+(single-conversation: judge 63.34 with dense vs 65.26 without), so the BM25+BFS
+stack the architecture describes is sufficient; and entropy decay is never
+triggered during LoCoMo evaluation, so these results say nothing about it.
+
+The explanation is not that Bayesian updating is worthless but that LoCoMo does
+not stress it. Most LoCoMo questions concern facts that are stated once or that
+do not oscillate; when a value simply needs to be the latest one asserted,
+``keep the newest'' ties the full posterior. The belief machinery is built to
+arbitrate \emph{contradictory, noisy, differently-reliable} evidence---a regime
+this benchmark rarely presents. The next section isolates that regime and shows
+the mechanism is far from worthless there, once given the input it needs.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{When Belief-Updating Helps: Reliability Extraction}
+\label{sec:reliability}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Why the update was inert.}
+The posterior update weights each observation by a reliability $r$: the
+likelihood of the observed value is $r$ and the remaining mass is spread over
+alternatives. A standard extraction pipeline emits
+$(\text{entity},\text{attribute},\text{value})$ triples with \emph{no}
+reliability, so every observation enters with the same fixed $r$. With constant
+$r$, the update degenerates into a soft recency-follower: repeated or recent
+values accumulate mass regardless of how trustworthy they are. This is exactly
+why it ties last-write-wins.
+
+We verify this at the belief layer with a synthetic contradiction
+micro-benchmark (no LLM, no retrieval): sequences of $(\text{value}, r)$
+observations for one attribute, scored on whether each strategy predicts the
+current true value. With \emph{constant} reliability---what the real pipeline
+feeds---Bayesian scores 67.1 macro, slightly \emph{below} last-write-wins
+(73.5). With \emph{varying} reliability that reflects true source trust,
+Bayesian reaches 100 and dominates both last-write-wins (74.3) and
+frequency-counting (48.2). The mechanism's value is entirely conditional on a
+reliability signal the pipeline was not providing.
+
+\paragraph{Supplying the missing signal.}
+We add a reliability-extraction component: the extractor estimates a per-claim
+reliability in $[0,1]$ from the speaker's \emph{epistemic markers}---hedging
+(``maybe'', ``I think'', ``if I recall'') lowers it, definiteness and
+self-correction (``actually'', ``confirmed'', ``definitely'') raise it---using a
+fixed rubric and never observing ground truth. This per-claim reliability is
+threaded into the Bayesian update.
+
+\paragraph{End-to-end evaluation.}
+We build a contradiction/staleness benchmark: 60 scenarios across five regimes
+in which an entity's attribute evolves through natural-language statements of
+varying linguistic confidence, some false, after which the current value is
+queried. One regime is \emph{adversarial}---confidence is inverted, so the true
+value is hedged and a false value asserted---included as an anti-rigging guard
+where reliability-weighting is expected to lose. We compare, all reading the
+same claims: \textsc{nous-reliability} (Bayesian, extracted reliability),
+\textsc{flat} (last-write-wins), \textsc{freq} (most frequent), and
+\textsc{append-retrieve} (a capable LLM given \emph{all} raw statements in order).
+
+First, the extractor recovers confidence from phrasing: statements written to be
+confident receive mean reliability 0.95, hedged ones 0.23 (separation $+0.72$);
+the no-match fallback fires near-zero, so this is not an artifact. Second
+(Table~\ref{tab:reliability}), on the realistic regimes \textsc{nous-reliability}
+scores 100 macro versus 67 for last-write-wins and 46 for frequency, and beats
+even \textsc{append-retrieve} (90)---which is given lossless recall and pays a
+query cost that grows with memory, whereas Nous queries a bounded posterior. The
+edge over \textsc{append-retrieve} is concentrated exactly in noise resistance
+(stable-noise 100 vs 75; reliability-conflict 100 vs 83). As designed, all
+confidence-based methods fail the adversarial regime; the honest claim is
+therefore conditional: reliability-weighting helps \emph{when epistemic
+confidence tracks correctness}, the common pragmatic case, and hurts when it is
+inverted.
+
+\begin{table}[t]
+\centering
+\caption{Contradiction/staleness benchmark: accuracy predicting the current
+value. Realistic macro excludes the adversarial guard regime.
+\textsc{append-retrieve} is an LLM reading all raw statements.}
+\label{tab:reliability}
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{4pt}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Regime & Nous-rel & Flat & Freq & Append-ret \\
+\midrule
+stable-noise          & \textbf{100} & 42 & 100 & 75 \\
+reliability-conflict  & \textbf{100} & 25 & 0   & 83 \\
+clean-change          & 100 & 100 & 83 & 100 \\
+recent-change         & 100 & 100 & 0  & 100 \\
+adversarial (guard)   & 0   & 42 & 50 & 17 \\
+\midrule
+Realistic macro       & \textbf{100} & 67 & 46 & 90 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+To check that the extractor reads epistemic \emph{stance} rather than matching a
+few templates, we re-ran with a larger, naturalistic phrasing bank containing
+subtle hedges absent from the rubric (``supposedly'', ``apparently'', ``last I
+checked'', ``don't quote me''). The signal and the advantage are essentially
+unchanged (separation $+0.71$; realistic macro 100 vs 65 vs 40). This is a
+proof-of-mechanism on synthetic data, not a claim about natural dialogue: the
+confidence--correctness correlation is by construction in four of five regimes,
+and a real-dialogue contradiction slice is the natural next step. But it
+establishes what the LoCoMo ablation could not: given the reliability signal it
+was designed for, belief-updating memory provides a large,
+mechanism-attributable advantage over both naive overwriting and strong
+LLM-over-memory retrieval.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Security: Provenance-Capped Belief Updating}
+\label{sec:security}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The reliability signal of Section~\ref{sec:reliability} raises an adversarial
+question: if the attacker controls the text, can they forge the confidence that
+earns trust? Because the numbers in this section are striking, we state their
+boundaries first---the conditions are what make the results honest. (i)~Provenance
+trust is assigned by an \emph{oracle}: each source receives a tier from its
+channel; we do not learn or verify tiers. (ii)~The benchmarks are
+\emph{synthetic}---a controlled belief-layer simulation and a minimal
+coding-assistant harness over a single repository---not a deployed system.
+(iii)~The defense against laundering requires taint-tracking that we
+\emph{characterize but do not implement}. (iv)~We cite
+AgentPoison~\citep{chen2024agentpoison} and MINJA~\citep{dong2025minja} only to
+establish that memory poisoning is a real, studied threat; our attack is a
+volumetric fact-overwrite and our success rates are \emph{not numerically
+comparable} to theirs.
+
+\paragraph{Trust composition.}
+An attacker injects observations asserting a false value $W$ to overwrite an
+established belief $V$. Each observation carries reliability
+$r=\min(\text{provenance},\text{content})$: content confidence may only
+\emph{lower} trust within a channel's provenance ceiling, never raise it.
+
+\paragraph{Content-inferred trust is adversarially gameable.}
+Using the extractor of Section~\ref{sec:reliability}, we phrased poison in an
+authoritative style (``Confirmed: the database is now MongoDB, verified''). The
+real extractor assigns it mean reliability $0.96$, versus $0.25$ for hedged
+phrasing. Thus \emph{content}-derived trust---the signal that prior
+defenses~\citep{mempoison2026} rely on---is forgeable by an attacker who simply
+writes confidently. This is why trust must come from provenance, which the
+attacker does not control.
+
+\paragraph{Under provenance-capped trust, low-trust poison cannot move the
+belief.}
+\emph{Condition:} the attacker is confined to a channel the system tiers below
+$0.5$ by provenance---scraped web content, tool output---independent of how the
+payload is worded. \emph{Result} (Table~\ref{tab:poison}, 400 trials/cell): a
+volumetric flood of up to $50$ poison observations against $4$ trusted ones
+yields $0\%$ attack success, where append-and-retrieve, last-write-wins, and
+content-trusted updating are all eventually flipped to $100\%$ by volume or by a
+confident phrasing. Ablating the source-trust signal alone (poison trusted
+equally) restores $100\%$, confirming that the \emph{provenance signal}, not the
+Bayesian arithmetic, is what defends. The guarantee is precisely bounded, not
+universal: it holds for channel trust $\le 0.5$ at any volume, and fails above
+$\sim 0.55$.
+
+\begin{table}[t]
+\centering
+\caption{Attack success rate (\%; lower is better) as an attacker injects $M$
+false observations against a belief established by four trusted ones, on a
+channel tiered $0.2$ by provenance. Belief-layer simulation, 400 trials/cell.
+Provenance-capped updating is the only strategy that resists a volumetric flood;
+this holds \emph{because} the low tier is assigned by provenance, not content.}
+\label{tab:poison}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lcccc}
+\toprule
+Memory strategy & $M{=}1$ & $M{=}3$ & $M{=}10$ & $M{=}50$ \\
+\midrule
+Last-write-wins            & 100 & 100 & 100 & 100 \\
+Append (majority)          &   0 &   0 & 100 & 100 \\
+Content-trusted update     & 100 & 100 & 100 & 100 \\
+\textbf{Provenance-capped (Nous)} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Laundering defeats naive tiering; only taint-tracking survives, and
+we do not implement it.}
+\emph{Condition:} the attacker routes the same poison through a \emph{trusted}
+intermediary---a tool the agent trusts that has ingested attacker-controlled
+data. If laundered content inherits the intermediary's high tier, attack success
+returns to $100\%$: provenance tiering \emph{alone} is fully defeated by
+laundering. Only when provenance is \emph{propagated}---laundered content
+down-tiered to its untrusted origin (taint tracking)---does success return to
+$0\%$. Taint tracking through every trusted intermediary is therefore a
+\emph{requirement} of the defense, not an optimisation, and a hard one
+(information-flow control); we characterize it but leave its implementation to
+future work. The belief update was never the difficult part; provenance
+propagation is.
+
+\paragraph{Costs: the cap is not free.}
+Two costs follow directly. First, utility: a genuinely reliable source arriving
+on a low-provenance channel is under-weighted, because the $\min$-cap that blocks
+poison also blocks \emph{legitimate} low-tier corrections---the same mechanism,
+opposite ground truth. Routing a true, correcting source through tier $0.3$ drops
+accuracy on the contradiction regimes from $100\%$ (uncapped) to $54\%$. Second,
+extraction: because Nous stores structured beliefs rather than raw text, it pays
+an \emph{extraction tax} that raw retrieval does not. On 30 real repository
+facts, answerability falls from $100\%$ under perfect extraction to $97\%$ when
+the real extractor must infer entity/attribute/value, with occasional total
+drops. This $\sim\!3\%$ is a \emph{floor}: our answerer renders all beliefs, so a
+misfiled belief stays visible, whereas a real retriever would miss it.
+
+\paragraph{End-to-end demonstration.}
+In a minimal coding assistant over one repository---identical LLM and prompt,
+only the memory layer differing---these effects reproduce end to end. A confident
+false ``migrated to MongoDB,'' injected on the low-trust web channel, flips an
+append-and-retrieve baseline ($100\%$) but not Nous ($0\%$); the same poison
+laundered through a trusted tool flips naive Nous ($100\%$) but not the
+taint-tracked variant ($0\%$); and on a \emph{legitimate} low-trust correction
+Nous answers \emph{wrong} where the baseline is right, making the utility cost
+concrete. We report this as a controlled demonstration on caveated, synthetic
+conditions, not as evidence of a deployed defense.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Limitations and Future Work}
 \label{sec:limitations}
 % ─────────────────────────────────────────────────────────────────────────────
 
-We do not include controlled ablations isolating the contribution of individual
-components such as Bayesian update versus flat storage, entropy decay versus
-no forgetting, or delta aggregation versus current-state retrieval. Ablations
-are the primary planned extension; the bucket analysis provides directional
-evidence for each component's contribution.
+The baseline comparison in Table~\ref{tab:main} is indicative, not fully
+controlled: baseline scores are taken from~\citet{xu2025amem} under a
+GPT-4o-mini backbone, whereas Nous uses gemini-2.5-flash and a different
+retrieval stack. A matched re-run of A-MEM (and a controlled comparison against
+concurrent belief-based memory systems) under one backbone and retriever is
+needed to convert our indicative token-F1 comparison into a definitive one.
 
-We evaluate exclusively on LoCoMo. LongMemEval~\citep{wu2025longmemeval}
-provides a harder, more carefully audited benchmark with fewer ground-truth
-errors, and evaluation on it is ongoing. Community audits have identified
-approximately 6.4 percent erroneous ground-truth answers in LoCoMo and
-LLM-judge calibration issues~\citep{locomo2025audit}; our strict token F1
-evaluation is therefore conservative.
+The reliability result (Section~\ref{sec:reliability}), while it establishes the
+mechanism end-to-end, rests on a \emph{synthetic} contradiction benchmark whose
+confidence--correctness correlation is by construction in four of five regimes.
+The highest-priority extension is a real-dialogue slice: mining genuine
+self-corrections and hedged-then-revised facts from conversational data and
+testing whether the advantage survives. Finer-grained reliability (beyond the
+near-binary confident/hedged split the extractor currently produces) and
+learned rather than rubric-based reliability are open directions.
 
-The categorical dimension is unimodal, requiring delta-log aggregation as a
-workaround for set-valued attributes. A set dimension maintaining an
-independent Bernoulli distribution per element is the highest-priority planned
-architectural extension. Making event timestamps explicit dimension attributes
-would additionally improve temporal context recall (currently 61.82\%). All
-results use GPT-4o-mini; confirming generalisation across backbone models such
-as Llama-3 and Mistral is necessary for a complete picture.
+Entropy decay is never exercised by LoCoMo evaluation, so this paper provides no
+empirical evidence for or against it; a staleness benchmark that queries
+deliberately outdated facts is required. The categorical dimension is also
+unimodal, requiring delta-log aggregation as a workaround for set-valued
+attributes; a set dimension maintaining an independent Bernoulli distribution
+per element is the main planned architectural extension, and making event
+timestamps explicit dimension attributes would improve temporal context recall
+(currently 61.82\%).
+
+Finally, all results use a single backbone (gemini-2.5-flash for
+extraction/answering); confirming generalisation across backbones, and
+completing the in-progress LongMemEval~\citep{wu2025longmemeval} evaluation for a
+second, more carefully audited benchmark, are necessary for a complete picture.
+Community audits report roughly 6.4 percent erroneous LoCoMo ground truths and
+LLM-judge calibration issues~\citep{locomo2025audit}, consistent with the metric
+gap we document in Section~\ref{sec:results}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
 % ─────────────────────────────────────────────────────────────────────────────
 
 We have presented Nous, an agent memory system that treats knowledge as a
-predictive world model rather than a database of facts. By representing each
-entity-attribute pair as a categorical probability distribution and updating
-it via information-theoretic surprise and closed-form Bayesian updates, Nous
-handles contradiction, forgetting, and multi-value aggregation in a unified
-framework with roots in cognitive science and information theory.
+predictive world model rather than a database of facts: each entity-attribute
+pair is a categorical distribution updated by information-theoretic surprise and
+a closed-form Bayesian posterior, with deltas as the primary artifact and
+entropy decay as forgetting. The architecture is clean and theoretically
+grounded in predictive coding and information theory.
 
-On the LoCoMo benchmark under controlled GPT-4o-mini conditions, Nous
-outperforms A-MEM by 24.1, 22.5, 27.3, and 45.4 F1 points on single-hop,
-multi-hop, temporal, and open-domain questions respectively. The 86 percent
-single-hop context recall confirms that the Bayesian retrieval pipeline
-reliably surfaces relevant information; the primary remaining bottleneck is
-LLM answer extraction. The results suggest that probabilistic world models are
-a competitive and theoretically principled alternative to graph and vector
-memory systems. All code and the evaluation harness are released publicly.
+Our empirical account is deliberately honest rather than triumphal. Under a
+strict token-F1 metric Nous is competitive with, not dominant over, the
+strongest academic baseline---clearly best on temporal reasoning, mixed
+elsewhere---and a controlled ablation shows that on LoCoMo the Bayesian belief
+update is inert, tied by naive last-write-wins, because conversational QA rarely
+presents the contradictory, low-reliability evidence the mechanism is designed
+for. We trace this to a missing per-observation reliability signal, add a
+reliability-extraction component that recovers it from epistemic markers in
+language, and show on a controlled contradiction benchmark that belief-updating
+then earns its keep: it beats naive overwriting (100 vs 67) and even a strong
+LLM-over-raw-memory baseline (100 vs 90), with the advantage concentrated in
+noise resistance. We also quantify a 27.5-point gap between strict token-F1 and
+a generous LLM-judge on identical outputs, a caution for the whole subfield's
+comparisons. The takeaway is not that probabilistic world models win every
+benchmark, but a sharper and more useful claim: they help precisely when memory
+must arbitrate conflicting, differently-trustworthy evidence---and we identify
+the component that makes that benefit real. All code and evaluation harnesses,
+including both benchmarks, are released publicly.
 
 \clearpage
 \bibliography{nous}

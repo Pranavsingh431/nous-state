@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from .dimension import Dimension
 from .delta import Delta
 from .surprise import compute_surprise
+from .config import config
 
 class BayesianUpdater:
     """
@@ -34,7 +35,26 @@ class BayesianUpdater:
         # Calculate surprise based on prior belief
         prior_prob = dimension.get_probability(observed_value, record_access=False)
         surprise_bits = compute_surprise(prior_prob)
-        
+
+        # --- ABLATION: naive last-write-wins overwrite (no Bayesian belief tracking) ---
+        # Collapses all mass onto the newest observed value, discarding the prior
+        # distribution entirely. This is the "flat storage" baseline the paper's
+        # Limitations section names as the key missing ablation.
+        if config.ABLATE_UPDATE == "flat":
+            posterior_dist = {observed_value: 1.0}
+            dimension.set_distribution(posterior_dist, timestamp=timestamp)
+            return Delta(
+                dimension_id=dimension.id,
+                prior=prior_dist,
+                posterior=posterior_dist,
+                surprise=surprise_bits,
+                evidence=evidence,
+                source=source,
+                source_reliability=reliability,
+                timestamp=timestamp if timestamp is not None else time.time(),
+                cascaded_from=cascaded_from,
+            )
+
         k = len(prior_dist)
         is_new_value = observed_value not in prior_dist
         if is_new_value:

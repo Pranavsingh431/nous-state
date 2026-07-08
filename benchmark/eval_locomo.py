@@ -233,7 +233,7 @@ Rules:
         max_tokens = 80
 
     payload = json.dumps({
-        "model": "google/gemini-2.5-flash",
+        "model": os.getenv("BACKBONE_MODEL", "google/gemini-2.5-flash"),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -523,7 +523,8 @@ def run_locomo_eval(data_path: str):
 
             conversation = item.get("conversation", {})
             speaker_a = conversation.get("speaker_a", "Speaker_A")
-            nous = Nous(":memory:", extractor=LLMExtractor(api_key=API_KEY, user_context={"name": speaker_a}))
+            nous = Nous(":memory:", extractor=LLMExtractor(api_key=API_KEY, user_context={"name": speaker_a},
+                                                           model=os.getenv("BACKBONE_MODEL", "google/gemini-2.5-flash")))
 
             sessions = sorted(
                 (k for k in conversation if k.startswith("session_") and not k.endswith("_date_time")),
