@@ -228,13 +228,41 @@ PersistenceLayer (SQLite — survives restarts)
 
 ## Research Status
 
-This is research-stage code. The preprint ([arXiv:2606.22030](https://arxiv.org/abs/2606.22030)) describes this
-as a first public report — not a final or fully audited result. Ablations, a second benchmark
-(LongMemEval), and broader backbone evaluation are planned as immediate next steps and will be
-reported in a future revision.
+This is research-stage code. The revised paper is deliberately honest and mixed — a
+mechanistic study of *when* belief-based memory helps, not a leaderboard claim. What the
+evaluation actually shows:
 
-The `benchmark/` directory contains the evaluation code that produced the LoCoMo numbers in
-the paper. See [`benchmark/README.md`](benchmark/README.md) for reproduction instructions.
+- **LoCoMo (strict token-F1).** Under a consistent metric, Nous is competitive with — not
+  dominant over — the strongest peer-reviewed baseline (A-MEM): it wins single-hop
+  (44.7 vs 27.0) and temporal (51.1 vs 12.1), and loses multi-hop (23.5 vs 45.9) and
+  open-domain (10.5 vs 44.7) — an even two–two split, not a sweep. (Backbones differ:
+  Nous uses `gemini-2.5-flash`, A-MEM `gpt-4o-mini`.)
+- **Ablation.** On LoCoMo the Bayesian belief update is *inert*: replacing it with naive
+  last-write-wins does not reduce accuracy, because ordinary conversational QA rarely
+  presents contradictory, low-reliability evidence. Observed-values aggregation, not the
+  belief math, is what moves the numbers there.
+- **Reliability extraction.** Given a per-observation reliability signal (estimated from
+  epistemic markers in language), belief-updating earns its keep on a controlled
+  contradiction/staleness benchmark — beating last-write-wins (100 vs 67) and a strong
+  LLM-over-raw-memory baseline (100 vs 90) — but only when confidence tracks correctness
+  (it loses an adversarial, confidence-inverted regime).
+- **Security (provenance-capped trust).** Deriving trust from source *provenance* rather
+  than content — composed as `min(provenance, content)` — holds memory-poisoning attack
+  success at 0% under a volumetric flood where last-write-wins, majority voting, and
+  content-inferred trust all reach 100%. The defense is bounded (holds for channel trust
+  ≤ 0.5), requires taint-tracking through trusted intermediaries, and costs some
+  responsiveness to legitimate low-trust corrections. This is **not** the first trust-based
+  poisoning defense; the contribution is narrow — the provenance signal, a measurement that
+  content-inferred trust is adversarially gameable, the `min`-composition rule, and the
+  taint-tracking requirement.
+
+**Open / caveats:** all results use a single backbone; the reliability and security
+benchmarks are synthetic (no real-dialogue slice yet); taint-tracking is characterized but
+not implemented; a second benchmark (LongMemEval) is in progress.
+
+The `benchmark/` directory contains every experiment above — the LoCoMo eval and ablations,
+the contradiction/reliability benchmark, and the poisoning/provenance suite. See
+[`benchmark/README.md`](benchmark/README.md) for reproduction instructions.
 
 ---
 

@@ -67,10 +67,22 @@ estimates it from epistemic markers in language. On a controlled
 contradiction/staleness benchmark this recovers a large advantage for
 belief-updating over last-write-wins (100 vs 67 macro accuracy) and over a
 strong LLM-over-raw-memory baseline (100 vs 90), concentrated exactly in
-noise resistance. Third, we document a 27.5-point macro gap between strict
-token-F1 and a generous LLM-as-judge on the same LoCoMo outputs, quantifying the
-metric fragility that complicates memory-system comparison. Nous requires no external
-vector database or graph engine; all code and the evaluation harness are public.
+noise resistance. Third, this reliability signal is also an attack surface: we
+measure that \emph{content}-inferred trust is adversarially gameable---a
+confidently phrased poison earns reliability $0.96$---and show that deriving trust
+from source \emph{provenance} instead, composed as
+$\min(\text{provenance},\text{content})$, holds memory-poisoning attack success at
+$0\%$ under a volumetric flood where last-write-wins, majority voting, and
+content-trust all reach $100\%$; the guarantee is bounded, requires taint-tracking
+through trusted intermediaries, and costs some responsiveness to legitimate
+low-trust corrections. Our security contribution is deliberately narrow---not the
+first trust-based poisoning defense, but the use of provenance rather than content
+as the trust signal, a measurement that content-trust is gameable, the
+$\min$-composition rule, and the taint-tracking requirement. Fourth, we document a
+27.5-point macro gap between strict token-F1 and a generous LLM-as-judge on the
+same LoCoMo outputs, quantifying the metric fragility that complicates
+memory-system comparison. Nous requires no external vector database or graph
+engine; all code and both evaluation benchmarks are public.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -132,10 +144,19 @@ evidence; (4) a mechanistic account of \emph{when} belief-updating memory
 helps, and a reliability-extraction component that supplies the missing
 per-observation reliability signal, validated end-to-end on a
 contradiction/staleness benchmark where it beats both last-write-wins and a
-strong LLM-over-memory baseline; and (5) a quantification of LoCoMo metric
+strong LLM-over-memory baseline; (5) a quantification of LoCoMo metric
 fragility---a 27-point macro gap between strict token-F1 and a generous
 LLM-as-judge on identical outputs (59.97 vs 32.45)---which we argue should
-temper leaderboard comparisons of memory systems.
+temper leaderboard comparisons of memory systems; and (6) a security analysis
+that treats the reliability signal as an attack surface, with a deliberately
+narrow contribution: not the first trust-based poisoning
+defense~\citep{mempoison2026}, but (a)~trust derived from source
+\emph{provenance} rather than content, (b)~a measurement that content-inferred
+trust is adversarially gameable, (c)~the $\min(\text{provenance},\text{content})$
+composition rule under which a volumetric poisoning flood fails ($0\%$ attack
+success versus $100\%$ for last-write-wins, majority voting, and content-trust),
+and (d)~the taint-tracking requirement without which the defense is laundered
+away.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Background and Related Work}
@@ -195,9 +216,10 @@ supply the entropy and mutual information foundations.
 A persistent-state attack surface unique to agents is \emph{memory poisoning}:
 an attacker writes malicious content into long-term memory so the agent acts on
 it in later sessions. AgentPoison~\citep{chen2024agentpoison} optimises a
-backdoor trigger in a RAG/memory store, and MINJA~\citep{dong2025minja} injects
-malicious records through query-only interaction; both report high
-attack-success rates and establish the threat category, which OWASP now lists
+backdoor trigger in a RAG/memory store (attack success $\ge 80\%$ at under
+$0.1\%$ poison rate), and MINJA~\citep{dong2025minja} injects malicious records
+through query-only interaction (76.8\% attack success); both establish that
+memory poisoning is a real, studied threat, which OWASP now lists
 as ASI06~\citep{owasp2026agentic}. We cite these to motivate the threat, not as
 a numerical baseline: their attack shapes (optimised trigger backdoor,
 reasoning-bridge injection) differ from the fact-overwrite setting we study, so
@@ -549,6 +571,7 @@ finding; it is \emph{not} a quality improvement.}
 \label{tab:metric}
 \renewcommand{\arraystretch}{1.25}
 \setlength{\tabcolsep}{4pt}
+\small
 \begin{tabular}{lcccc}
 \toprule
 Category & Token-F1 & BLEU-1 & LLM-judge & Ctx Rec \\
@@ -830,16 +853,17 @@ channel tiered $0.2$ by provenance. Belief-layer simulation, 400 trials/cell.
 Provenance-capped updating is the only strategy that resists a volumetric flood;
 this holds \emph{because} the low tier is assigned by provenance, not content.}
 \label{tab:poison}
-\renewcommand{\arraystretch}{1.25}
-\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{4pt}
+\small
 \begin{tabular}{lcccc}
 \toprule
 Memory strategy & $M{=}1$ & $M{=}3$ & $M{=}10$ & $M{=}50$ \\
 \midrule
-Last-write-wins            & 100 & 100 & 100 & 100 \\
-Append (majority)          &   0 &   0 & 100 & 100 \\
-Content-trusted update     & 100 & 100 & 100 & 100 \\
-\textbf{Provenance-capped (Nous)} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
+Last-write-wins        & 100 & 100 & 100 & 100 \\
+Append (majority)      &   0 &   0 & 100 & 100 \\
+Content-trusted        & 100 & 100 & 100 & 100 \\
+\textbf{Provenance-capped} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -863,7 +887,9 @@ Two costs follow directly. First, utility: a genuinely reliable source arriving
 on a low-provenance channel is under-weighted, because the $\min$-cap that blocks
 poison also blocks \emph{legitimate} low-tier corrections---the same mechanism,
 opposite ground truth. Routing a true, correcting source through tier $0.3$ drops
-accuracy on the contradiction regimes from $100\%$ (uncapped) to $54\%$. Second,
+accuracy on the contradiction regimes from $100\%$ (uncapped) to $54\%$ on
+average, with the collapse concentrated in the high-noise regime (down to $21\%$)
+rather than the sparse-conflict one (which holds at $88\%$). Second,
 extraction: because Nous stores structured beliefs rather than raw text, it pays
 an \emph{extraction tax} that raw retrieval does not. On 30 real repository
 facts, answerability falls from $100\%$ under perfect extraction to $97\%$ when
@@ -942,9 +968,14 @@ reliability-extraction component that recovers it from epistemic markers in
 language, and show on a controlled contradiction benchmark that belief-updating
 then earns its keep: it beats naive overwriting (100 vs 67) and even a strong
 LLM-over-raw-memory baseline (100 vs 90), with the advantage concentrated in
-noise resistance. We also quantify a 27.5-point gap between strict token-F1 and
-a generous LLM-judge on identical outputs, a caution for the whole subfield's
-comparisons. The takeaway is not that probabilistic world models win every
+noise resistance. That same reliability signal is an attack surface: we measure
+that content-inferred trust is adversarially gameable and show that
+provenance-capped updating, $\min(\text{provenance},\text{content})$, holds
+volumetric memory-poisoning at $0\%$ attack success where naive baselines reach
+$100\%$---a defense that is bounded, requires taint-tracking, carries a measured
+utility cost, and is narrow in novelty relative to prior content-based defenses.
+We also quantify a 27.5-point gap between strict token-F1 and a generous
+LLM-judge on identical outputs, a caution for the whole subfield's comparisons. The takeaway is not that probabilistic world models win every
 benchmark, but a sharper and more useful claim: they help precisely when memory
 must arbitrate conflicting, differently-trustworthy evidence---and we identify
 the component that makes that benefit real. All code and evaluation harnesses,
