@@ -197,25 +197,51 @@ information measure~\citep{shannon1948} supplies the definition
 $\mathcal{S}(x) = -\log_2 P(x)$ bits, and Cover and Thomas~\citep{cover2006}
 supply the entropy and mutual information foundations.
 
+\paragraph{Concurrent belief-based agent memory.}
+A parallel line of recent work also represents memory probabilistically.
+BeliefMem~\citep{liao2026beliefmem} stores multiple candidate conclusions as
+independent probability-carrying entries, updated by a Noisy-OR rule as evidence
+accumulates, and evaluates on LoCoMo and ALFWorld; the Belief
+Engine~\citep{yang2026beliefengine} maintains an auditable log-odds stance per
+proposition for multi-agent deliberation; and graph-native cognitive
+memory~\citep{park2026graphnative} applies symbolic (AGM-style) belief revision
+over versioned memory. Nous differs in representation---a single closed-form
+\emph{categorical} Bayesian posterior per entity-attribute dimension, rather than
+a Noisy-OR over independent hypotheses or a scalar log-odds stance---but the
+load-bearing difference is one of question: these systems propose a probabilistic
+memory and measure its accuracy, whereas our contributions are the
+\emph{reliability-conditional} account of \emph{when} such memory helps
+(Section~\ref{sec:reliability}) and the provenance-capped poisoning defense
+(Section~\ref{sec:security}), neither of which they address.
+BeliefShift~\citep{myakala2026beliefshift}, a benchmark for temporal belief
+consistency and opinion drift across sessions, is a natural target for the
+real-dialogue evaluation we leave to future work.
+
 \paragraph{Memory poisoning and trust-based defenses.}
 A persistent-state attack surface unique to agents is \emph{memory poisoning}:
 an attacker writes malicious content into long-term memory so the agent acts on
 it in later sessions. AgentPoison~\citep{chen2024agentpoison} optimises a
 backdoor trigger in a RAG/memory store (attack success $\ge 80\%$ at under
 $0.1\%$ poison rate), and MINJA~\citep{dong2025minja} injects malicious records
-through query-only interaction (76.8\% attack success); both establish that
-memory poisoning is a real, studied threat, which OWASP now lists
+through query-only interaction (76.8\% attack success), and sleeper
+poisoning~\citep{pulipaka2026sleeper} plants dormant poisoned memories that
+activate only in later sessions; these establish that memory poisoning is a
+real, studied threat, which OWASP now lists
 as ASI06~\citep{owasp2026agentic}. We cite these to motivate the threat, not as
 a numerical baseline: their attack shapes (optimised trigger backdoor,
 reasoning-bridge injection) differ from the fact-overwrite setting we study, so
 success rates are not directly comparable. On defense, the closest prior work
 assigns \emph{content-derived} trust: \citet{mempoison2026} score trust from
 composite content and pattern signals with trust-aware retrieval and temporal
-decay. We show (Section~\ref{sec:security}) that content-inferred trust is
+decay, and A-MemGuard~\citep{wei2025amemguard} detects poisoning by consensus
+across an agent's reasoning paths---both content- or pattern-based signals. We
+show (Section~\ref{sec:security}) that content-inferred trust is
 adversarially gameable---a confident-sounding injection earns high trust---and
 that \emph{provenance}-derived trust, composed as
 $\min(\text{provenance},\text{content})$ and propagated through trusted
-intermediaries via taint tracking, is what actually resists poisoning. OWASP
+intermediaries via taint tracking, is what actually resists poisoning;
+concurrent lineage-tracking memory~\citep{ouyang2026memlineage} builds the
+derivation graph such propagation requires. OWASP
 already recommends provenance tracking as a mitigation~\citep{owasp2026agentic};
 our contribution is not the concept but a concrete mechanism for it and an
 empirical map of when it holds, where it fails, and what it costs.
