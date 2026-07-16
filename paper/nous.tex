@@ -63,7 +63,7 @@ benchmark this recovers a large advantage for belief-updating over last-write-wi
 noise resistance. Third, that reliability signal is an attack surface:
 \emph{content}-inferred trust is gameable (a confidently phrased poison earns
 reliability $0.96$), so we derive trust from source \emph{provenance}, composed as
-$\min(\text{provenance},\text{content})$---unlike prior content-based
+$\min(\text{provenance},\text{content})$, unlike prior content-based
 defenses~\citep{mempoison2026}. This holds memory-poisoning attack success at $0\%$
 under a volumetric flood where naive baselines reach $100\%$; it is bounded, and
 requires taint-tracking we characterize but do not implement. Finally, we document
@@ -123,22 +123,22 @@ mass away from the old value.
 This paper is a mechanistic study rather than a leaderboard entry, and its
 contributions are three. \textbf{(1) A reliability-conditional account of when
 belief-updating helps.} A controlled ablation shows the Bayesian update is inert
-on LoCoMo (a three-conversation subset)---naive last-write-wins ties it---because
+on LoCoMo (a three-conversation subset); naive last-write-wins ties it, because
 the benchmark rarely presents contradictory, low-reliability evidence; the update
 then recovers a large, mechanism-attributable advantage once supplied a
 per-observation reliability signal (estimated from epistemic markers in language),
 on a contradiction/staleness benchmark where it beats both last-write-wins and a
 strong LLM-over-memory baseline. \textbf{(2) Provenance-capped belief updating as a
 memory-poisoning defense.} Because the reliability signal is itself an attack
-surface, we contribute---narrowly, and \emph{not} as the first trust-based
-defense~\citep{mempoison2026}---four results: trust derived from source
+surface, we contribute (narrowly, and \emph{not} as the first trust-based
+defense~\citep{mempoison2026}) four results: trust derived from source
 \emph{provenance} rather than content; a measurement that content-inferred trust is
 adversarially gameable; the $\min(\text{provenance},\text{content})$ composition
 rule under which a volumetric poisoning flood fails ($0\%$ vs $100\%$ for naive
 baselines); and the taint-tracking requirement without which the defense is
-laundered away. \textbf{(3) A quantification of LoCoMo metric fragility}---a
+laundered away. \textbf{(3) A quantification of LoCoMo metric fragility}: a
 27.5-point macro gap between strict token-F1 and a generous LLM-judge on identical
-outputs (59.97 vs 32.45)---which we argue should temper leaderboard comparisons.
+outputs (59.97 vs 32.45), which we argue should temper leaderboard comparisons.
 The architecture (dimensions, deltas, surprise, entropy decay) and a
 dependency-free open-source implementation are the vehicle for these findings, not
 the claim; we describe them in Section~\ref{sec:arch}.
@@ -183,7 +183,7 @@ An independent audit by Penfield Labs~\citep{locomo2025audit} found this judge
 accepts up to 63 percent of intentionally wrong answers, and that approximately
 6.4 percent of LoCoMo ground-truth answers contain errors.
 We therefore restrict our numerical comparison to A-MEM and MemGPT, which report
-strict token-F1, and---because this judge fragility is central---we report both
+strict token-F1, and, because this judge fragility is central, we report both
 strict token-F1 and an LLM-judge score for Nous and quantify their gap
 (Section~\ref{sec:results}) rather than reporting the judge alone.
 
@@ -205,9 +205,9 @@ accumulates, and evaluates on LoCoMo and ALFWorld; the Belief
 Engine~\citep{yang2026beliefengine} maintains an auditable log-odds stance per
 proposition for multi-agent deliberation; and graph-native cognitive
 memory~\citep{park2026graphnative} applies symbolic (AGM-style) belief revision
-over versioned memory. Nous differs in representation---a single closed-form
+over versioned memory. Nous differs in representation, a single closed-form
 \emph{categorical} Bayesian posterior per entity-attribute dimension, rather than
-a Noisy-OR over independent hypotheses or a scalar log-odds stance---but the
+a Noisy-OR over independent hypotheses or a scalar log-odds stance, but the
 load-bearing difference is one of question: these systems propose a probabilistic
 memory and measure its accuracy, whereas our contributions are the
 \emph{reliability-conditional} account of \emph{when} such memory helps
@@ -234,9 +234,9 @@ success rates are not directly comparable. On defense, the closest prior work
 assigns \emph{content-derived} trust: \citet{mempoison2026} score trust from
 composite content and pattern signals with trust-aware retrieval and temporal
 decay, and A-MemGuard~\citep{wei2025amemguard} detects poisoning by consensus
-across an agent's reasoning paths---both content- or pattern-based signals. We
+across an agent's reasoning paths, both content- or pattern-based signals. We
 show (Section~\ref{sec:security}) that content-inferred trust is
-adversarially gameable---a confident-sounding injection earns high trust---and
+adversarially gameable (a confident-sounding injection earns high trust) and
 that \emph{provenance}-derived trust, composed as
 $\min(\text{provenance},\text{content})$ and propagated through trusted
 intermediaries via taint tracking, is what actually resists poisoning;
@@ -334,7 +334,7 @@ posterior mode whenever
 $p_{\mathrm{prior}}(\text{obs}) > \varepsilon / (1 - \varepsilon)$; with
 $\varepsilon = 0.01$ this threshold is $\approx 0.0101$, so any value already
 holding non-trivial mass is promoted immediately. This is a sanity property of the
-update, not a strong result---the interesting behaviour is how mass accumulates
+update, not a strong result; the interesting behaviour is how mass accumulates
 under repeated, differently-reliable evidence, which we study empirically in
 Sections~\ref{sec:reliability} and~\ref{sec:security}.
 
@@ -567,7 +567,7 @@ SH = single-hop, MH = multi-hop, T = temporal, OD = open-domain.
 An earlier version of this work reported the LLM-judge column of
 Table~\ref{tab:metric} as ``F1.'' It is not: it is a generous LLM-as-judge that
 accepts semantically correct paraphrases. On identical outputs the judge scores
-59.97 macro while strict token-F1 scores 32.45---a 27.5-point gap. Three of the
+59.97 macro while strict token-F1 scores 32.45, a 27.5-point gap. Three of the
 four judge scores exceed the mathematical maximum token-F1 attainable given the
 measured BLEU-1, confirming the two cannot be the same quantity. The gap is
 largest exactly where answers admit many surface forms: open-domain
@@ -657,7 +657,7 @@ path forward.
 
 Context recall cleanly separates retrieval failures from answering failures.
 For single-hop, context recall is high (86.07\%) while strict token-F1 is 44.66,
-identifying the answering/normalisation step---not retrieval---as the binding
+identifying the answering/normalisation step, not retrieval, as the binding
 constraint. For open-domain, context recall (47.50\%) is itself the ceiling:
 the retriever supports fewer than half the answers, which is why the generous
 judge score there (62.50) is untrustworthy and the token-F1 (10.54) so low.
@@ -696,7 +696,7 @@ $-$ Aggregation (\textsc{no-agg})   & 66.58 & 35.39 \\
 
 The result is decisive and, for our thesis, uncomfortable
 (Table~\ref{tab:ablation}). \textbf{Replacing the Bayesian update with naive
-last-write-wins does not reduce accuracy}---it is marginally better on the judge
+last-write-wins does not reduce accuracy}: it is marginally better on the judge
 (72.46 vs 69.62) and a wash on token-F1 (36.27 vs 36.77). On LoCoMo, the
 Bayesian belief update is effectively \emph{inert}. The component that does
 matter is the mundane one: disabling observed-values aggregation costs the most
@@ -711,7 +711,7 @@ The explanation is not that Bayesian updating is worthless but that LoCoMo does
 not stress it. Most LoCoMo questions concern facts that are stated once or that
 do not oscillate; when a value simply needs to be the latest one asserted,
 ``keep the newest'' ties the full posterior. The belief machinery is built to
-arbitrate \emph{contradictory, noisy, differently-reliable} evidence---a regime
+arbitrate \emph{contradictory, noisy, differently-reliable} evidence, a regime
 this benchmark rarely presents. The next section isolates that regime and shows
 the mechanism is far from worthless there, once given the input it needs.
 
@@ -733,8 +733,8 @@ why it ties last-write-wins.
 We verify this at the belief layer with a synthetic contradiction
 micro-benchmark (no LLM, no retrieval): sequences of $(\text{value}, r)$
 observations for one attribute, scored on whether each strategy predicts the
-current true value. With \emph{constant} reliability---what the real pipeline
-feeds---Bayesian scores 67.1 macro, slightly \emph{below} last-write-wins
+current true value. With \emph{constant} reliability (what the real pipeline
+feeds), Bayesian scores 67.1 macro, slightly \emph{below} last-write-wins
 (73.5). With \emph{varying} reliability that reflects true source trust,
 Bayesian reaches 100 and dominates both last-write-wins (74.3) and
 frequency-counting (48.2). The mechanism's value is entirely conditional on a
@@ -742,9 +742,9 @@ reliability signal the pipeline was not providing.
 
 \paragraph{Supplying the missing signal.}
 We add a reliability-extraction component: the extractor estimates a per-claim
-reliability in $[0,1]$ from the speaker's \emph{epistemic markers}---hedging
+reliability in $[0,1]$ from the speaker's \emph{epistemic markers}: hedging
 (``maybe'', ``I think'', ``if I recall'') lowers it, definiteness and
-self-correction (``actually'', ``confirmed'', ``definitely'') raise it---using a
+self-correction (``actually'', ``confirmed'', ``definitely'') raise it, using a
 fixed rubric and never observing ground truth. This per-claim reliability is
 threaded into the Bayesian update.
 
@@ -752,8 +752,8 @@ threaded into the Bayesian update.
 We build a contradiction/staleness benchmark: 60 scenarios across five regimes
 in which an entity's attribute evolves through natural-language statements of
 varying linguistic confidence, some false, after which the current value is
-queried. One regime is \emph{adversarial}---confidence is inverted, so the true
-value is hedged and a false value asserted---included as an anti-rigging guard
+queried. One regime is \emph{adversarial} (confidence is inverted, so the true
+value is hedged and a false value asserted), included as an anti-rigging guard
 where reliability-weighting is expected to lose. We compare, all reading the
 same claims: \textsc{nous-reliability} (Bayesian, extracted reliability),
 \textsc{flat} (last-write-wins), \textsc{freq} (most frequent), and
@@ -764,7 +764,7 @@ confident receive mean reliability 0.95, hedged ones 0.23 (separation $+0.72$);
 the no-match fallback fires near-zero, so this is not an artifact. Second
 (Table~\ref{tab:reliability}), on the realistic regimes \textsc{nous-reliability}
 scores 100 macro versus 67 for last-write-wins and 46 for frequency, and beats
-even \textsc{append-retrieve} (90)---which is given lossless recall and pays a
+even \textsc{append-retrieve} (90), which is given lossless recall and pays a
 query cost that grows with memory, whereas Nous queries a bounded posterior. The
 edge over \textsc{append-retrieve} is concentrated exactly in noise resistance
 (stable-noise 100 vs 75; reliability-conflict 100 vs 83). As designed, all
@@ -818,11 +818,11 @@ LLM-over-memory retrieval.
 The reliability signal of Section~\ref{sec:reliability} raises an adversarial
 question: if the attacker controls the text, can they forge the confidence that
 earns trust? Because the numbers in this section are striking, we state their
-boundaries first---the conditions are what make the results honest. (i)~Provenance
+boundaries first: the conditions are what make the results honest. (i)~Provenance
 trust is assigned by an \emph{oracle}: each source receives a tier from its
 channel; we do not learn or verify tiers. (ii)~The benchmarks are
-\emph{synthetic}---a controlled belief-layer simulation and a minimal
-coding-assistant harness over a single repository---not a deployed system.
+\emph{synthetic} (a controlled belief-layer simulation and a minimal
+coding-assistant harness over a single repository), not a deployed system.
 (iii)~The defense against laundering requires taint-tracking that we
 \emph{characterize but do not implement}. (iv)~We cite
 AgentPoison~\citep{chen2024agentpoison} and MINJA~\citep{dong2025minja} only to
@@ -842,8 +842,8 @@ authoritative style (``Confirmed: the database is now MongoDB, verified''). The
 real extractor assigns it mean reliability $0.96$, versus $0.25$ for hedged
 phrasing. We are explicit about what this does and does not show: we wrote the
 authoritative poison and our own extractor scored it high, so this demonstrates
-that content-inferred trust \emph{can} be gamed by construction---an attacker who
-controls the text controls this signal---not that any specific deployed
+that content-inferred trust \emph{can} be gamed by construction (an attacker who
+controls the text controls this signal), not that any specific deployed
 content-trust defense~\citep{mempoison2026} fails against a real adversary. The
 architectural consequence is the same either way: a signal the attacker can write
 cannot be the trust anchor, which is why trust must come from provenance, which the
@@ -852,7 +852,7 @@ attacker does not control.
 \paragraph{Under provenance-capped trust, low-trust poison cannot move the
 belief.}
 \emph{Condition:} the attacker is confined to a channel the system tiers below
-$0.5$ by provenance---scraped web content, tool output---independent of how the
+$0.5$ by provenance (scraped web content, tool output), independent of how the
 payload is worded. \emph{Result} (Table~\ref{tab:poison}, 400 trials/cell): a
 volumetric flood of up to $50$ poison observations against $4$ trusted ones
 yields $0\%$ attack success, where append-and-retrieve, last-write-wins, and
@@ -889,11 +889,11 @@ Content-trusted        & 100 & 100 & 100 & 100 \\
 \paragraph{Laundering defeats naive tiering; only taint-tracking survives, and
 we do not implement it.}
 \emph{Condition:} the attacker routes the same poison through a \emph{trusted}
-intermediary---a tool the agent trusts that has ingested attacker-controlled
+intermediary, a tool the agent trusts that has ingested attacker-controlled
 data. If laundered content inherits the intermediary's high tier, attack success
 returns to $100\%$: provenance tiering \emph{alone} is fully defeated by
-laundering. Only when provenance is \emph{propagated}---laundered content
-down-tiered to its untrusted origin (taint tracking)---does success return to
+laundering. Only when provenance is \emph{propagated}, laundered content
+down-tiered to its untrusted origin (taint tracking), does success return to
 $0\%$. Taint tracking through every trusted intermediary is therefore a
 \emph{requirement} of the defense, not an optimisation, and a hard one
 (information-flow control); we characterize it but leave its implementation to
@@ -903,7 +903,7 @@ propagation is.
 \paragraph{Costs: the cap is not free.}
 Two costs follow directly. First, utility: a genuinely reliable source arriving
 on a low-provenance channel is under-weighted, because the $\min$-cap that blocks
-poison also blocks \emph{legitimate} low-tier corrections---the same mechanism,
+poison also blocks \emph{legitimate} low-tier corrections: the same mechanism,
 opposite ground truth. Routing a true, correcting source through tier $0.3$ drops
 accuracy on the contradiction regimes from $100\%$ (uncapped) to $54\%$ on
 average, with the collapse concentrated in the high-noise regime (down to $21\%$)
@@ -916,8 +916,8 @@ drops. This $\sim\!3\%$ is a \emph{floor}: our answerer renders all beliefs, so 
 misfiled belief stays visible, whereas a real retriever would miss it.
 
 \paragraph{End-to-end demonstration.}
-In a minimal coding assistant over one repository---identical LLM and prompt,
-only the memory layer differing---these effects reproduce end to end. A confident
+In a minimal coding assistant over one repository (identical LLM and prompt,
+only the memory layer differing), these effects reproduce end to end. A confident
 false ``migrated to MongoDB,'' injected on the low-trust web channel, flips an
 append-and-retrieve baseline ($100\%$) but not Nous ($0\%$); the same poison
 laundered through a trusted tool flips naive Nous ($100\%$) but not the
@@ -971,13 +971,13 @@ We set out to determine \emph{when} belief-based agent memory helps. Our vehicle
 Nous, treats knowledge as a predictive world model rather than a database of facts:
 each entity-attribute pair is a categorical distribution updated by
 information-theoretic surprise and a closed-form Bayesian posterior, with deltas as
-the primary artifact and entropy decay as forgetting---an architecture grounded in
+the primary artifact and entropy decay as forgetting, an architecture grounded in
 predictive coding and information theory.
 
 Our empirical account is deliberately honest rather than triumphal. Under a
 strict token-F1 metric Nous is competitive with, not dominant over, the
-strongest academic baseline---clearly best on temporal reasoning, mixed
-elsewhere---and a controlled ablation shows that on LoCoMo the Bayesian belief
+strongest academic baseline (clearly best on temporal reasoning, mixed
+elsewhere), and a controlled ablation shows that on LoCoMo the Bayesian belief
 update is inert, tied by naive last-write-wins, because conversational QA rarely
 presents the contradictory, low-reliability evidence the mechanism is designed
 for. We trace this to a missing per-observation reliability signal, add a
@@ -989,12 +989,12 @@ noise resistance. That same reliability signal is an attack surface: we measure
 that content-inferred trust is adversarially gameable and show that
 provenance-capped updating, $\min(\text{provenance},\text{content})$, holds
 volumetric memory-poisoning at $0\%$ attack success where naive baselines reach
-$100\%$---a defense that is bounded, requires taint-tracking, carries a measured
+$100\%$, a defense that is bounded, requires taint-tracking, carries a measured
 utility cost, and is narrow in novelty relative to prior content-based defenses.
 We also quantify a 27.5-point gap between strict token-F1 and a generous
 LLM-judge on identical outputs, a caution for the whole subfield's comparisons. The takeaway is not that probabilistic world models win every
 benchmark, but a sharper and more useful claim: they help precisely when memory
-must arbitrate conflicting, differently-trustworthy evidence---and we identify
+must arbitrate conflicting, differently-trustworthy evidence, and we identify
 the component that makes that benefit real. All code and evaluation harnesses,
 including both benchmarks, are released publicly.
 
